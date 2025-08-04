@@ -1,9 +1,11 @@
-use super::NvimErr;
+use super::{NvimErr, NvimWtr};
+use nvim_rs::Buffer;
 
 use super::item::{FileType, Item, Level, Metadata};
 use super::states::Items;
 use crate::fs::{self, File, Permissions, RootFile};
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use futures::stream::Stream;
@@ -41,6 +43,30 @@ impl<'a> Entries<'a> {
     async fn children_in(entries: &fs::Entries, dir: &Path) -> Children {
         let children = entries.children().await;
         Children(children.iter().map(|(k, v)| (dir.join(k), v)).collect())
+    }
+
+    pub async fn render_entire_buffer(
+        &self,
+        buf: &Buffer<NvimWtr>,
+        lines: &Items,
+        expanded_dir: &BTreeSet<PathBuf>,
+    ) -> Result<(), NvimErr> {
+        use futures::StreamExt as _;
+
+        let stream = self
+            .flatten(Level::base())
+            .filter(|path| expanded_dir.contains(path))
+            .await;
+
+        let recursive = stream.collect::<Vec<_>>().await;
+
+        lines.replace(recursive.iter()).await;
+
+        let lines = recursive.iter().map(make_line).collect();
+
+        buf.set_lines(0, -1, false, lines).await?;
+
+        Ok(())
     }
 }
 

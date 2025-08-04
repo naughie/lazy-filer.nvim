@@ -13,6 +13,7 @@ local ui = myui.declare_ui({
             local opts = { buffer = buf, silent = true }
             vim.keymap.set('n', 'o', M.fn.open_or_expand, opts)
             vim.keymap.set('n', '<CR>', M.fn.open_or_expand, opts)
+            vim.keymap.set('n', 'u', M.fn.move_to_parent, opts)
             vim.keymap.set('n', 'q', ':q<CR>', opts)
         end,
     },
@@ -61,6 +62,14 @@ local function open_or_expand()
     local line_idx = cursor[1]
 
     vim.rpcnotify(jobid, "open_or_expand", buf, line_idx - 1)
+end
+
+local function move_to_parent()
+    local jobid = states.jobid.get()
+    if not jobid then return end
+
+    local buf = get_or_create_buf()
+    vim.rpcnotify(jobid, "move_to_parent", buf, vim.uv.cwd())
 end
 
 function M.rpc.focus_on_last_active_win()
@@ -116,6 +125,7 @@ end
 
 M.fn = {
     new_filer = new_filer,
+    move_to_parent = move_to_parent,
     open_file = open_file,
     expand_dir = expand_dir,
     open_or_expand = open_or_expand,

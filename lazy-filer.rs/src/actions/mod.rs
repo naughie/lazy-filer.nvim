@@ -5,6 +5,7 @@ mod item;
 mod utils;
 
 mod expand_dir;
+mod move_to_parent;
 mod new_filer;
 mod open_file;
 mod open_or_expand;
@@ -35,8 +36,8 @@ pub trait Action {
 pub mod prelude {
     pub use super::Action;
     pub use super::{
-        expand_dir::ExpandDir, new_filer::NewFiler, open_file::OpenFile,
-        open_or_expand::OpenOrExpand,
+        expand_dir::ExpandDir, move_to_parent::MoveToParent, new_filer::NewFiler,
+        open_file::OpenFile, open_or_expand::OpenOrExpand,
     };
 }
 

@@ -38,6 +38,10 @@ impl NeovimHandler {
     async fn open_or_expand(&self, arg: &OpenOrExpand) {
         arg.run(&self.states).await.ok();
     }
+
+    async fn move_to_parent(&self, arg: &MoveToParent) {
+        arg.run(&self.states).await.ok();
+    }
 }
 
 impl Handler for NeovimHandler {
@@ -79,6 +83,31 @@ impl Handler for NeovimHandler {
                 };
 
                 self.new_filer(&arg).await;
+            }
+            "move_to_parent" => {
+                let mut args = args.into_iter();
+
+                let Some(buf_id) = args.next() else {
+                    return;
+                };
+                let Some(dir) = args.next() else {
+                    return;
+                };
+                let Value::String(dir) = dir else {
+                    return;
+                };
+                let Some(dir) = dir.into_str() else {
+                    return;
+                };
+
+                let buf = Buffer::new(buf_id, neovim);
+
+                let arg = MoveToParent {
+                    buf,
+                    dir: dir.into(),
+                };
+
+                self.move_to_parent(&arg).await;
             }
             "open_file" => {
                 let mut args = args.into_iter();
