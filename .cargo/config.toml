@@ -1,0 +1,2 @@
+[build]
+target-dir = "lazy-filer.rs/target"

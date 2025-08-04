@@ -1,0 +1,245 @@
+use super::NvimErr;
+
+use super::item::{FileType, Item, Level, Metadata};
+use super::states::Items;
+use crate::fs::{self, File, Permissions, RootFile};
+
+use std::path::{Path, PathBuf};
+
+use futures::stream::Stream;
+
+pub struct Entries<'a> {
+    entries: fs::Entries,
+    dir: &'a Path,
+}
+
+pub async fn get_entries<'a>(root: &RootFile, dir: &'a Path) -> Entries<'a> {
+    let entries = root.get_entries(dir).await;
+    Entries { entries, dir }
+}
+
+impl<'a> Entries<'a> {
+    pub async fn update_with_readdir(&self) -> Result<(), NvimErr> {
+        use nvim_rs::error::CallError;
+
+        if let Err(e) = self.entries.update_with_readdir(self.dir).await {
+            let msg = e.to_string();
+            Err(Box::new(CallError::NeovimError(Some(0), msg)))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn flatten(&self, level: Level) -> FlattenEntries<'a, '_> {
+        FlattenEntries { inner: self, level }
+    }
+
+    pub async fn children(&self) -> Children {
+        Self::children_in(&self.entries, self.dir).await
+    }
+
+    async fn children_in(entries: &fs::Entries, dir: &Path) -> Children {
+        let children = entries.children().await;
+        Children(children.iter().map(|(k, v)| (dir.join(k), v)).collect())
+    }
+}
+
+pub struct Children(Vec<(PathBuf, File)>);
+
+impl IntoIterator for Children {
+    type Item = (PathBuf, File);
+    type IntoIter = std::vec::IntoIter<Self::Item>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
+impl Children {
+    fn sort(&mut self) {
+        self.0.sort_unstable_by(|a, b| a.0.cmp(&b.0));
+    }
+}
+
+pub struct FlattenEntries<'a, 'e> {
+    level: Level,
+    inner: &'e Entries<'a>,
+}
+
+impl<'a, 'e> FlattenEntries<'a, 'e> {
+    pub async fn filter<Filt>(self, filter: Filt) -> impl Stream<Item = Item>
+    where
+        Filt: for<'p> Fn(&'p Path) -> bool,
+    {
+        let inner = FlattenFilterEntries {
+            inner: self.inner,
+            filter,
+        };
+        inner.into_stream(self.level).await
+    }
+}
+
+struct FlattenFilterEntries<'a, 'e, Filt> {
+    inner: &'e Entries<'a>,
+    filter: Filt,
+}
+
+impl<Filt> FlattenFilterEntries<'_, '_, Filt>
+where
+    Filt: for<'p> Fn(&'p Path) -> bool,
+{
+    async fn iter(self, level: Level) -> FlattenEntriesIter<Filt> {
+        let mut children = self.inner.children().await;
+        children.sort();
+        let stack = vec![(level.increment(), children.into_iter())];
+
+        FlattenEntriesIter {
+            stack,
+            filter: self.filter,
+        }
+    }
+
+    async fn into_stream(self, level: Level) -> impl Stream<Item = Item> {
+        let init = self.iter(level).await;
+        futures::stream::unfold(init, |mut state| async {
+            let v = state.next_item().await?;
+            Some((v, state))
+        })
+    }
+}
+
+struct FlattenEntriesIter<Filt> {
+    stack: Vec<(Level, <Children as IntoIterator>::IntoIter)>,
+    filter: Filt,
+}
+
+impl<Filt> FlattenEntriesIter<Filt>
+where
+    Filt: for<'p> Fn(&'p Path) -> bool,
+{
+    async fn next_item(&mut self) -> Option<Item> {
+        while let Some(&mut (level, ref mut children)) = self.stack.last_mut() {
+            let Some((child_path, child)) = children.next() else {
+                self.stack.pop();
+                continue;
+            };
+
+            let metadata = match child {
+                File::Regular { perm } => Metadata {
+                    perm,
+                    file_type: FileType::Regular,
+                },
+                File::Directory { entries, perm } => {
+                    if (self.filter)(&child_path) {
+                        let mut children = Entries::children_in(&entries, &child_path).await;
+                        children.sort();
+                        self.stack.push((level.increment(), children.into_iter()));
+                    }
+
+                    Metadata {
+                        perm,
+                        file_type: FileType::Directory,
+                    }
+                }
+                File::Link { to } => {
+                    let file = to.follow_link();
+
+                    match file {
+                        File::Regular { perm } => Metadata {
+                            perm: *perm,
+                            file_type: FileType::Regular,
+                        },
+                        File::Directory { entries, perm } => {
+                            if (self.filter)(&child_path) {
+                                let mut children = Entries::children_in(entries, &child_path).await;
+                                children.sort();
+                                self.stack.push((level.increment(), children.into_iter()));
+                            }
+
+                            Metadata {
+                                perm: *perm,
+                                file_type: FileType::Directory,
+                            }
+                        }
+                        _ => Metadata {
+                            perm: Permissions::default(),
+                            file_type: FileType::Other,
+                        },
+                    }
+                }
+                _ => Metadata {
+                    perm: Permissions::default(),
+                    file_type: FileType::Other,
+                },
+            };
+
+            return Some(Item {
+                level,
+                path: child_path,
+                metadata,
+            });
+        }
+
+        None
+    }
+}
+
+pub fn make_line(item: &Item) -> String {
+    let &Item {
+        level,
+        ref path,
+        metadata,
+    } = item;
+
+    let fname = path.file_name().unwrap_or_default();
+
+    let mut ret = String::with_capacity(fname.len() + 2 * level.to_num() + 7);
+    level.repeat(|| ret.push_str("  "));
+    metadata.push(&mut ret);
+    ret.push_str(&fname.to_string_lossy());
+
+    if metadata.is_dir() {
+        ret.push('/');
+    }
+
+    ret
+}
+
+pub struct PathGetter<'a> {
+    idx: i64,
+    lines: &'a Items,
+}
+
+pub fn get_path_at(idx: i64, lines: &Items) -> PathGetter<'_> {
+    PathGetter { idx, lines }
+}
+
+fn idx_as_usize<S>(idx: i64, lines: &[S]) -> Option<usize> {
+    if idx >= 0 {
+        Some(idx as usize)
+    } else {
+        let len = lines.len();
+        let idx = (len as i64) + idx;
+        if idx >= 0 { Some(idx as usize) } else { None }
+    }
+}
+
+impl PathGetter<'_> {
+    pub async fn and_then<Func, T>(self, f: Func) -> Option<T>
+    where
+        Func: for<'p> FnOnce(&'p Item) -> Option<T>,
+    {
+        let lock = self.lines.lock().await;
+        idx_as_usize(self.idx, &lock)
+            .and_then(|idx| lock.get(idx))
+            .and_then(f)
+    }
+
+    pub async fn splice(self, replacement: impl Iterator<Item = Item>) {
+        let mut lock = self.lines.lock().await;
+        if let Some(idx) = idx_as_usize(self.idx, &lock) {
+            let range = (idx + 1)..(idx + 1);
+            lock.splice(range, replacement);
+        }
+    }
+}
