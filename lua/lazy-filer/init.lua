@@ -97,8 +97,8 @@ function M.build_and_spawn_filer(root_dir)
 end
 
 local function setup_autocmd()
-    local augroup = vim.api.nvim_create_augroup('NaughieLazyFiler', { clear = true })
-    vim.api.nvim_create_autocmd('VimEnter', {
+    local augroup = vim.api.nvim_create_augroup("NaughieLazyFiler", { clear = true })
+    vim.api.nvim_create_autocmd("VimEnter", {
         group = augroup,
         callback = spawn_filer,
     })
@@ -113,10 +113,10 @@ M.fn = {
 }
 
 local function define_keymaps_wrap(args, default_opts)
-    local opts = vim.tbl_deep_extend('force', vim.deepcopy(default_opts), args[4] or {})
+    local opts = vim.tbl_deep_extend("force", vim.deepcopy(default_opts), args[4] or {})
 
     local rhs = args[3]
-    if type(rhs) == 'string' and M.fn[rhs] then
+    if type(rhs) == "string" and M.fn[rhs] then
         vim.keymap.set(args[1], args[2], M.fn[rhs], opts)
     else
         vim.keymap.set(args[1], args[2], rhs, opts)
