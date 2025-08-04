@@ -62,7 +62,7 @@ local function move_to_parent()
 end
 
 function M.rpc.focus_on_last_active_win()
-    ui.main.close()
+    myui.close_all()
     myui.focus_on_last_active_win()
 end
 
