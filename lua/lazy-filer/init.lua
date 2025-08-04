@@ -4,20 +4,9 @@ local mkstate = require("glocal-states")
 local myui = require("my-ui")
 
 local api = vim.api
-local uv = vim.uv
 
 local states = { jobid = mkstate.global() }
-local ui = myui.declare_ui({
-    main = {
-        setup_buf = function(buf)
-            local opts = { buffer = buf, silent = true }
-            vim.keymap.set('n', 'o', M.fn.open_or_expand, opts)
-            vim.keymap.set('n', '<CR>', M.fn.open_or_expand, opts)
-            vim.keymap.set('n', 'u', M.fn.move_to_parent, opts)
-            vim.keymap.set('n', 'q', ':q<CR>', opts)
-        end,
-    },
-})
+local ui = myui.declare_ui({})
 
 local plugin_root = ""
 
@@ -115,14 +104,6 @@ local function setup_autocmd()
     })
 end
 
-function M.setup(opts)
-    plugin_root = opts.root_dir
-
-    vim.keymap.set('n', '<C-e>', new_filer, { silent = true })
-
-    setup_autocmd()
-end
-
 M.fn = {
     new_filer = new_filer,
     move_to_parent = move_to_parent,
@@ -130,5 +111,38 @@ M.fn = {
     expand_dir = expand_dir,
     open_or_expand = open_or_expand,
 }
+
+local function define_keymaps_wrap(args, default_opts)
+    local opts = vim.tbl_deep_extend('force', vim.deepcopy(default_opts), args[4] or {})
+
+    local rhs = args[3]
+    if type(rhs) == 'string' and M.fn[rhs] then
+        vim.keymap.set(args[1], args[2], M.fn[rhs], opts)
+    else
+        vim.keymap.set(args[1], args[2], rhs, opts)
+    end
+end
+
+function M.setup(opts)
+    plugin_root = opts.root_dir
+
+    if opts.keymaps then
+        if opts.keymaps.global then
+            for _, args in ipairs(opts.keymaps.global) do
+                define_keymaps_wrap(args, { silent = true })
+            end
+        end
+
+        if opts.keymaps.filer then
+            ui.opts.main.setup_buf = function(buf)
+                for _, args in ipairs(opts.keymaps.filer) do
+                    define_keymaps_wrap(args, { buffer = buf, silent = true })
+                end
+            end
+        end
+    end
+
+    setup_autocmd()
+end
 
 return M
