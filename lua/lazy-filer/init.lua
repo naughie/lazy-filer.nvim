@@ -91,8 +91,9 @@ local function spawn_filer()
     end
 end
 
-local function build_and_spawn_filer()
-    vim.system({ "cargo", "build", "--release" }, {}, function()
+function M.build_and_spawn_filer(root_dir)
+    plugin_root = root_dir
+    vim.system({ "cargo", "build", "--release" }, { cwd = plugin_root }, function()
         vim.schedule(spawn_filer)
     end)
 end
@@ -106,10 +107,9 @@ local function setup_autocmd()
 end
 
 function M.setup(opts)
-    api.nvim_create_user_command('LazyFilerBuild', build_and_spawn_filer, { nargs = 0 })
-    vim.keymap.set('n', '<C-e>', new_filer, { silent = true })
-
     plugin_root = opts.root_dir
+
+    vim.keymap.set('n', '<C-e>', new_filer, { silent = true })
 
     setup_autocmd()
 end
