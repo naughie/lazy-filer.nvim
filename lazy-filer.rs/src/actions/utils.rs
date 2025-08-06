@@ -6,6 +6,8 @@ use super::states::Items;
 use crate::fs::{self, File, Permissions, RootFile};
 
 use std::collections::BTreeSet;
+use std::ffi::OsStr;
+use std::ops::RangeInclusive;
 use std::path::{Path, PathBuf};
 
 use futures::stream::Stream;
@@ -30,6 +32,13 @@ impl<'a> Entries<'a> {
         } else {
             Ok(())
         }
+    }
+
+    pub async fn insert(&self, fname: &OsStr, file: File) {
+        use fs::Component;
+        self.entries
+            .insert(Component::from_slice(fname), file)
+            .await;
     }
 
     pub fn flatten(&self, level: Level) -> FlattenEntries<'a, '_> {
@@ -267,5 +276,70 @@ impl PathGetter<'_> {
             let range = (idx + 1)..(idx + 1);
             lock.splice(range, replacement);
         }
+    }
+}
+
+pub fn find_in_dir(prefix: &Path, lines: &[Item]) -> RangeInclusive<usize> {
+    let mut start = lines.len();
+    let mut end = start;
+
+    for idx in lines
+        .iter()
+        .enumerate()
+        .skip_while(|(_, item)| !item.path.starts_with(prefix) || item.path == prefix)
+        .map_while(|(idx, item)| {
+            if item.path.starts_with(prefix) {
+                Some(idx)
+            } else {
+                None
+            }
+        })
+    {
+        if idx < start {
+            start = idx;
+        }
+        end = idx;
+    }
+
+    start..=end
+}
+
+pub fn file_to_item(level: Level, path: &Path, file: &File) -> Item {
+    let metadata = match file {
+        &File::Regular { perm } => Metadata {
+            perm,
+            file_type: FileType::Regular,
+        },
+        &File::Directory { perm, entries: _ } => Metadata {
+            perm,
+            file_type: FileType::Directory,
+        },
+        File::Link { to } => {
+            let file = to.follow_link();
+            match *file {
+                File::Regular { perm } => Metadata {
+                    perm,
+                    file_type: FileType::Regular,
+                },
+                File::Directory { perm, entries: _ } => Metadata {
+                    perm,
+                    file_type: FileType::Directory,
+                },
+                _ => Metadata {
+                    perm: Permissions::default(),
+                    file_type: FileType::Other,
+                },
+            }
+        }
+        _ => Metadata {
+            perm: Permissions::default(),
+            file_type: FileType::Other,
+        },
+    };
+
+    Item {
+        level,
+        path: path.to_path_buf(),
+        metadata,
     }
 }

@@ -23,6 +23,22 @@ pub struct NeovimHandler {
 }
 
 impl NeovimHandler {
+    async fn get_dir(&self, arg: &GetDir) -> Result<Value, Value> {
+        arg.run(&self.states).await.map_err(|_| Value::Nil)
+    }
+
+    async fn create_entry(&self, arg: &CreateEntry) {
+        arg.run(&self.states).await.ok();
+    }
+
+    async fn expand_dir(&self, arg: &ExpandDir) {
+        arg.run(&self.states).await.ok();
+    }
+
+    async fn move_to_parent(&self, arg: &MoveToParent) {
+        arg.run(&self.states).await.ok();
+    }
+
     async fn new_filer(&self, arg: &NewFiler) {
         arg.run(&self.states).await.ok();
     }
@@ -31,15 +47,7 @@ impl NeovimHandler {
         arg.run(&self.states).await.ok();
     }
 
-    async fn expand_dir(&self, arg: &ExpandDir) {
-        arg.run(&self.states).await.ok();
-    }
-
     async fn open_or_expand(&self, arg: &OpenOrExpand) {
-        arg.run(&self.states).await.ok();
-    }
-
-    async fn move_to_parent(&self, arg: &MoveToParent) {
         arg.run(&self.states).await.ok();
     }
 }
@@ -49,15 +57,68 @@ impl Handler for NeovimHandler {
 
     async fn handle_request(
         &self,
-        _name: String,
-        _args: Vec<Value>,
+        name: String,
+        args: Vec<Value>,
         _neovim: Neovim<Self::Writer>,
     ) -> Result<Value, Value> {
-        Ok(Value::Nil)
+        if name == "get_dir" {
+            let mut args = args.into_iter();
+
+            let Some(line_idx) = args.next() else {
+                return Ok(Value::Nil);
+            };
+            let Value::Integer(line_idx) = line_idx else {
+                return Ok(Value::Nil);
+            };
+            let Some(line_idx) = line_idx.as_i64() else {
+                return Ok(Value::Nil);
+            };
+
+            let arg = GetDir { line_idx };
+
+            self.get_dir(&arg).await
+        } else {
+            Ok(Value::Nil)
+        }
     }
 
     async fn handle_notify(&self, name: String, args: Vec<Value>, neovim: Neovim<Self::Writer>) {
         match name.as_str() {
+            "create_entry" => {
+                let mut args = args.into_iter();
+
+                let Some(buf_id) = args.next() else {
+                    return;
+                };
+                let Some(line_idx) = args.next() else {
+                    return;
+                };
+                let Value::Integer(line_idx) = line_idx else {
+                    return;
+                };
+                let Some(line_idx) = line_idx.as_i64() else {
+                    return;
+                };
+                let Some(fname) = args.next() else {
+                    return;
+                };
+                let Value::String(fname) = fname else {
+                    return;
+                };
+                let Some(fname) = fname.into_str() else {
+                    return;
+                };
+
+                let buf = Buffer::new(buf_id, neovim.clone());
+
+                let arg = CreateEntry {
+                    buf,
+                    line_idx,
+                    fname,
+                };
+
+                self.create_entry(&arg).await;
+            }
             "new_filer" => {
                 let mut args = args.into_iter();
 

@@ -1,7 +1,7 @@
 use super::{NvimErr, NvimWtr};
 use nvim_rs::Buffer;
 
-use super::item::{Item, Level};
+use super::item::Level;
 use super::states::Items;
 use super::utils;
 use super::{Action, States};
@@ -42,35 +42,10 @@ impl Action for ExpandDir {
 async fn remove_items_in(prefix: &Path, lines: &Items) -> RangeInclusive<usize> {
     let mut lock = lines.lock().await;
 
-    let range = find_in_dir(prefix, &lock);
+    let range = utils::find_in_dir(prefix, &lock);
     lock.drain(range.clone());
 
     range
-}
-
-fn find_in_dir(prefix: &Path, lines: &[Item]) -> RangeInclusive<usize> {
-    let mut start = lines.len();
-    let mut end = start;
-
-    for idx in lines
-        .iter()
-        .enumerate()
-        .skip_while(|(_, item)| !item.path.starts_with(prefix) || item.path == prefix)
-        .map_while(|(idx, item)| {
-            if item.path.starts_with(prefix) {
-                Some(idx)
-            } else {
-                None
-            }
-        })
-    {
-        if idx < start {
-            start = idx;
-        }
-        end = idx;
-    }
-
-    start..=end
 }
 
 pub async fn expand_dir(

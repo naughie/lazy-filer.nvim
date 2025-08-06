@@ -4,7 +4,9 @@ use crate::states::States;
 mod item;
 mod utils;
 
+mod create_entry;
 mod expand_dir;
+mod get_dir;
 mod move_to_parent;
 mod new_filer;
 mod open_file;
@@ -36,8 +38,9 @@ pub trait Action {
 pub mod prelude {
     pub use super::Action;
     pub use super::{
-        expand_dir::ExpandDir, move_to_parent::MoveToParent, new_filer::NewFiler,
-        open_file::OpenFile, open_or_expand::OpenOrExpand,
+        create_entry::CreateEntry, expand_dir::ExpandDir, get_dir::GetDir,
+        move_to_parent::MoveToParent, new_filer::NewFiler, open_file::OpenFile,
+        open_or_expand::OpenOrExpand,
     };
 }
 

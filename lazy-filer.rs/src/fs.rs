@@ -11,7 +11,7 @@ use tokio::sync::{Mutex, MutexGuard};
 pub struct Component(OsString);
 
 impl Component {
-    fn from_slice(s: &OsStr) -> Self {
+    pub fn from_slice(s: &OsStr) -> Self {
         Self(s.to_os_string())
     }
 }
@@ -150,6 +150,19 @@ impl File {
                 File::Link { to } => ret = to,
                 _ => return ret,
             }
+        }
+    }
+
+    pub fn regular(perm: u32) -> Self {
+        Self::Regular {
+            perm: Permissions(perm),
+        }
+    }
+
+    pub fn empty_directory(perm: u32) -> Self {
+        Self::Directory {
+            entries: Default::default(),
+            perm: Permissions(perm),
         }
     }
 }
