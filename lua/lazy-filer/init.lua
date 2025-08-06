@@ -112,7 +112,11 @@ function M.rpc.focus_on_last_active_win()
 end
 
 function M.rpc.open_filer_win()
-    ui.main.open_float()
+    if ui.main.get_win() then
+        ui.main.focus()
+    else
+        ui.main.open_float()
+    end
 end
 
 local function spawn_filer()
