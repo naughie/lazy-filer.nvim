@@ -8,7 +8,9 @@ local api = vim.api
 local states = {
     jobid = mkstate.global(),
 
-    tmp_create_entry_states = { dir = nil }
+    tmp_create_entry_states = { dir = nil },
+
+    dir_displayed = mkstate.tab(),
 }
 local ui = myui.declare_ui({})
 
@@ -190,11 +192,18 @@ M.fn = {
     end,
 
     move_to_parent = function()
-        rpc_call.move_to_parent(vim.uv.cwd())
+        local cwd = states.dir_displayed.get()
+        if not cwd then return end
+        rpc_call.move_to_parent(cwd)
+
+        local parent = vim.fs.dirname(cwd)
+        states.dir_displayed.set(parent)
     end,
 
     new_filer = function()
-        rpc_call.new_filer(vim.uv.cwd())
+        local cwd = vim.uv.cwd()
+        states.dir_displayed.set(cwd)
+        rpc_call.new_filer(cwd)
     end,
 
     open_file = function()
