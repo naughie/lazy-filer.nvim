@@ -155,9 +155,15 @@ local function open_new_entry_win()
     })
 
     ui.companion.open_float()
+
+    local win = ui.companion.get_win()
+    if not win then return end
+    api.nvim_win_set_cursor(win, { 3, 0 })
+    vim.cmd("startinsert")
 end
 
 local function create_entry()
+    vim.cmd("stopinsert")
     if not tmp_create_entry_states.dir then return end
 
     local line_idx = tmp_create_entry_states.dir.idx
