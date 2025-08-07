@@ -197,6 +197,20 @@ impl Edit<'_, '_> {
         Ok(())
     }
 
+    pub async fn remove(self, at: LineIdx) -> Result<(), NvimErr> {
+        let mut lock = self.inner.lock().await;
+
+        if let Some(at) = at.as_usize(lock.len()) {
+            lock.remove(at);
+        }
+        drop(lock);
+
+        let LineIdx(at) = at;
+        self.buf.set_lines(at, at + 1, false, vec![]).await?;
+
+        Ok(())
+    }
+
     pub async fn remove_range<Func, Range>(self, range: Func) -> Result<(), NvimErr>
     where
         Func: for<'a> FnOnce(&'a [Item]) -> Range,

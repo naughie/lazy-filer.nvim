@@ -50,6 +50,15 @@ local rpc_call = {
         vim.rpcnotify(jobid, "create_entry", buf, dir_line_idx, fname)
     end,
 
+    delete_entry = function(dir_line_idx)
+        local jobid = states.jobid.get()
+        if not jobid then return end
+
+        local buf = get_or_create_buf()
+
+        vim.rpcnotify(jobid, "delete_entry", buf, dir_line_idx)
+    end,
+
     expand_dir = function(line_idx)
         local jobid = states.jobid.get()
         if not jobid then return end
@@ -65,6 +74,14 @@ local rpc_call = {
 
         local dir = vim.rpcrequest(jobid, "get_dir", line_idx - 1)
         return { name = dir, idx = line_idx - 1 }
+    end,
+
+    get_file_path = function(line_idx)
+        local jobid = states.jobid.get()
+        if not jobid then return end
+
+        local file = vim.rpcrequest(jobid, "get_file_path", line_idx - 1)
+        return { name = file, idx = line_idx - 1 }
     end,
 
     move_to_parent = function(cwd)
@@ -165,6 +182,59 @@ local function create_entry()
     rpc_call.create_entry(line_idx, fname)
 end
 
+local function open_delete_entry_win()
+    local line_idx = get_line_idx()
+
+    local file = rpc_call.get_file_path(line_idx)
+
+    local buf = api.nvim_create_buf(false, true)
+
+    local prompt = {
+        "",
+        "",
+        "    Delete an entry: " .. file.name,
+        "       Are you sure? [y/N]",
+        "",
+        "",
+    }
+
+    local width = 0
+    for _, line in ipairs(prompt) do
+        width = math.max(width, vim.fn.strwidth(line))
+    end
+    width = width + 4
+    local height = #prompt
+
+    local top = math.floor((vim.o.lines - height) / 2)
+    local left = math.floor((vim.o.columns - width) / 2)
+
+    api.nvim_buf_set_lines(buf, 0, -1, false, prompt)
+
+    local win = vim.api.nvim_open_win(buf, true, {
+        relative = "editor",
+        style = "minimal",
+        width = width,
+        height = height,
+        row = top,
+        col = left,
+        border = "rounded",
+    })
+
+    local close = function()
+        api.nvim_win_close(win, true)
+        api.nvim_buf_delete(buf, { force = true })
+    end
+    local confirm = function()
+        close()
+        rpc_call.delete_entry(file.idx)
+    end
+
+    define_keymaps_wrap({ 'n', 'y', confirm }, { buffer = buf, silent = true })
+    define_keymaps_wrap({ 'n', 'n', close }, { buffer = buf, silent = true })
+    define_keymaps_wrap({ 'n', '<ESC>', close }, { buffer = buf, silent = true })
+    define_keymaps_wrap({ 'n', 'q', close }, { buffer = buf, silent = true })
+end
+
 function M.build_and_spawn_filer(root_dir)
     plugin_root = root_dir
     vim.system({ "cargo", "build", "--release" }, { cwd = plugin_root }, function()
@@ -218,6 +288,7 @@ M.fn = {
 
     create_entry = create_entry,
     open_new_entry_win = open_new_entry_win,
+    open_delete_entry_win = open_delete_entry_win,
     spawn_filer = spawn_filer,
 
     move_to_filer = function()

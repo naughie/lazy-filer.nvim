@@ -6,6 +6,7 @@ use crate::fs::{self, File, Permissions, RootFile};
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
+use std::io::Error as IoErr;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -30,6 +31,20 @@ impl<'a> Entries<'a> {
             Err(Box::new(CallError::NeovimError(Some(0), msg)))
         } else {
             Ok(())
+        }
+    }
+
+    pub async fn remove_fs(&self, path: &Path, recursive: bool) -> Result<(), IoErr> {
+        let Some(fname) = path.file_name() else {
+            return Ok(());
+        };
+
+        self.entries.remove(fname).await;
+
+        if recursive {
+            std::fs::remove_dir_all(path)
+        } else {
+            std::fs::remove_file(path)
         }
     }
 

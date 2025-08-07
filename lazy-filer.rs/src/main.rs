@@ -27,7 +27,15 @@ impl NeovimHandler {
         arg.run(&self.states).await.map_err(|_| Value::Nil)
     }
 
+    async fn get_file_path(&self, arg: &GetFilePath) -> Result<Value, Value> {
+        arg.run(&self.states).await.map_err(|_| Value::Nil)
+    }
+
     async fn create_entry(&self, arg: &CreateEntry) {
+        arg.run(&self.states).await.ok();
+    }
+
+    async fn delete_entry(&self, arg: &DeleteEntry) {
         arg.run(&self.states).await.ok();
     }
 
@@ -61,19 +69,32 @@ impl Handler for NeovimHandler {
         args: Vec<Value>,
         _neovim: Neovim<Self::Writer>,
     ) -> Result<Value, Value> {
-        if name == "get_dir" {
-            let mut args = args.into_iter();
+        match name.as_str() {
+            "get_dir" => {
+                let mut args = args.into_iter();
 
-            let Some(line_idx) = args.next() else {
-                return Ok(Value::Nil);
-            };
-            let line_idx = line_idx.try_into()?;
+                let Some(line_idx) = args.next() else {
+                    return Ok(Value::Nil);
+                };
+                let line_idx = line_idx.try_into()?;
 
-            let arg = GetDir { line_idx };
+                let arg = GetDir { line_idx };
 
-            self.get_dir(&arg).await
-        } else {
-            Ok(Value::Nil)
+                self.get_dir(&arg).await
+            }
+            "get_file_path" => {
+                let mut args = args.into_iter();
+
+                let Some(line_idx) = args.next() else {
+                    return Ok(Value::Nil);
+                };
+                let line_idx = line_idx.try_into()?;
+
+                let arg = GetFilePath { line_idx };
+
+                self.get_file_path(&arg).await
+            }
+            _ => Ok(Value::Nil),
         }
     }
 
@@ -110,6 +131,25 @@ impl Handler for NeovimHandler {
                 };
 
                 self.create_entry(&arg).await;
+            }
+            "delete_entry" => {
+                let mut args = args.into_iter();
+
+                let Some(buf_id) = args.next() else {
+                    return;
+                };
+                let Some(line_idx) = args.next() else {
+                    return;
+                };
+                let Ok(line_idx) = line_idx.try_into() else {
+                    return;
+                };
+
+                let buf = Buffer::new(buf_id, neovim.clone());
+
+                let arg = DeleteEntry { buf, line_idx };
+
+                self.delete_entry(&arg).await;
             }
             "new_filer" => {
                 let mut args = args.into_iter();
