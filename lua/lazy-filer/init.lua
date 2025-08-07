@@ -198,6 +198,20 @@ M.fn = {
     create_entry = create_entry,
     open_new_entry_win = open_new_entry_win,
     spawn_filer = spawn_filer,
+
+    move_to_filer = function()
+        ui.main.focus()
+    end,
+    move_to_subwin = function()
+        ui.companion.focus()
+    end,
+
+    close_filer = function()
+        ui.main.close()
+    end,
+    close_subwin = function()
+        ui.companion.close()
+    end,
 }
 
 function M.setup(opts)
