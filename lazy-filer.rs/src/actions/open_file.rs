@@ -2,11 +2,11 @@ use super::{NvimErr, NvimWtr};
 use nvim_rs::Neovim;
 use nvim_rs::Value;
 
-use super::utils;
+use super::renderer::LineIdx;
 use super::{Action, States};
 
 pub struct OpenFile {
-    pub line_idx: i64,
+    pub line_idx: LineIdx,
     pub nvim: Neovim<NvimWtr>,
 }
 
@@ -14,7 +14,10 @@ impl Action for OpenFile {
     type Resp = ();
 
     async fn run(&self, states: &States) -> Result<Self::Resp, NvimErr> {
-        let Some(path) = utils::get_path_at(self.line_idx, &states.actions.rendered_lines)
+        let Some(path) = states
+            .actions
+            .rendered_lines
+            .get(self.line_idx)
             .and_then(|item| {
                 if item.metadata.is_regular() {
                     item.path.to_str().map(Value::from)

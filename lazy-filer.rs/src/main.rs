@@ -67,12 +67,7 @@ impl Handler for NeovimHandler {
             let Some(line_idx) = args.next() else {
                 return Ok(Value::Nil);
             };
-            let Value::Integer(line_idx) = line_idx else {
-                return Ok(Value::Nil);
-            };
-            let Some(line_idx) = line_idx.as_i64() else {
-                return Ok(Value::Nil);
-            };
+            let line_idx = line_idx.try_into()?;
 
             let arg = GetDir { line_idx };
 
@@ -93,10 +88,7 @@ impl Handler for NeovimHandler {
                 let Some(line_idx) = args.next() else {
                     return;
                 };
-                let Value::Integer(line_idx) = line_idx else {
-                    return;
-                };
-                let Some(line_idx) = line_idx.as_i64() else {
+                let Ok(line_idx) = line_idx.try_into() else {
                     return;
                 };
                 let Some(fname) = args.next() else {
@@ -176,10 +168,7 @@ impl Handler for NeovimHandler {
                 let Some(line_idx) = args.next() else {
                     return;
                 };
-                let Value::Integer(line_idx) = line_idx else {
-                    return;
-                };
-                let Some(line_idx) = line_idx.as_i64() else {
+                let Ok(line_idx) = line_idx.try_into() else {
                     return;
                 };
 
@@ -199,10 +188,7 @@ impl Handler for NeovimHandler {
                 let Some(line_idx) = args.next() else {
                     return;
                 };
-                let Value::Integer(line_idx) = line_idx else {
-                    return;
-                };
-                let Some(line_idx) = line_idx.as_i64() else {
+                let Ok(line_idx) = line_idx.try_into() else {
                     return;
                 };
 
@@ -221,10 +207,7 @@ impl Handler for NeovimHandler {
                 let Some(line_idx) = args.next() else {
                     return;
                 };
-                let Value::Integer(line_idx) = line_idx else {
-                    return;
-                };
-                let Some(line_idx) = line_idx.as_i64() else {
+                let Ok(line_idx) = line_idx.try_into() else {
                     return;
                 };
 

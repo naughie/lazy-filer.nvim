@@ -37,15 +37,15 @@ impl Permissions {
     }
 
     pub fn to_s(self) -> [u8; 3] {
-        let mut bytes = [b' ', b' ', b' '];
+        let mut bytes = [b'-', b'-', b'-'];
         if self.0 & 0o400 != 0 {
-            bytes[0] = b'R';
+            bytes[0] = b'r';
         }
         if self.0 & 0o200 != 0 {
-            bytes[1] = b'W';
+            bytes[1] = b'w';
         }
         if self.0 & 0o100 != 0 {
-            bytes[2] = b'X';
+            bytes[2] = b'x';
         }
         bytes
     }

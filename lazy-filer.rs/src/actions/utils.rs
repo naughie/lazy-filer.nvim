@@ -1,13 +1,12 @@
 use super::{NvimErr, NvimWtr};
 use nvim_rs::Buffer;
 
-use super::item::{FileType, Item, Level, Metadata};
-use super::states::Items;
+use super::renderer::{FileType, Item, Items, Level, Metadata};
 use crate::fs::{self, File, Permissions, RootFile};
 
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
-use std::ops::RangeInclusive;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use futures::stream::Stream;
@@ -60,20 +59,12 @@ impl<'a> Entries<'a> {
         lines: &Items,
         expanded_dir: &BTreeSet<PathBuf>,
     ) -> Result<(), NvimErr> {
-        use futures::StreamExt as _;
-
         let stream = self
             .flatten(Level::base())
             .filter(|path| expanded_dir.contains(path))
             .await;
 
-        let recursive = stream.collect::<Vec<_>>().await;
-
-        lines.replace(recursive.iter()).await;
-
-        let lines = recursive.iter().map(make_line).collect();
-
-        buf.set_lines(0, -1, false, lines).await?;
+        lines.edit(buf).replace_all(stream).await?;
 
         Ok(())
     }
@@ -219,67 +210,7 @@ where
     }
 }
 
-pub fn make_line(item: &Item) -> String {
-    let &Item {
-        level,
-        ref path,
-        metadata,
-    } = item;
-
-    let fname = path.file_name().unwrap_or_default();
-
-    let mut ret = String::with_capacity(fname.len() + 2 * level.to_num() + 7);
-    level.repeat(|| ret.push_str("  "));
-    metadata.push(&mut ret);
-    ret.push_str(&fname.to_string_lossy());
-
-    if metadata.is_dir() {
-        ret.push('/');
-    }
-
-    ret
-}
-
-pub struct PathGetter<'a> {
-    idx: i64,
-    lines: &'a Items,
-}
-
-pub fn get_path_at(idx: i64, lines: &Items) -> PathGetter<'_> {
-    PathGetter { idx, lines }
-}
-
-fn idx_as_usize<S>(idx: i64, lines: &[S]) -> Option<usize> {
-    if idx >= 0 {
-        Some(idx as usize)
-    } else {
-        let len = lines.len();
-        let idx = (len as i64) + idx;
-        if idx >= 0 { Some(idx as usize) } else { None }
-    }
-}
-
-impl PathGetter<'_> {
-    pub async fn and_then<Func, T>(self, f: Func) -> Option<T>
-    where
-        Func: for<'p> FnOnce(&'p Item) -> Option<T>,
-    {
-        let lock = self.lines.lock().await;
-        idx_as_usize(self.idx, &lock)
-            .and_then(|idx| lock.get(idx))
-            .and_then(f)
-    }
-
-    pub async fn splice(self, replacement: impl Iterator<Item = Item>) {
-        let mut lock = self.lines.lock().await;
-        if let Some(idx) = idx_as_usize(self.idx, &lock) {
-            let range = (idx + 1)..(idx + 1);
-            lock.splice(range, replacement);
-        }
-    }
-}
-
-pub fn find_in_dir(prefix: &Path, lines: &[Item]) -> RangeInclusive<usize> {
+pub fn find_in_dir(prefix: &Path, lines: &[Item]) -> Range<usize> {
     let mut start = lines.len();
     let mut end = start;
 
@@ -298,10 +229,10 @@ pub fn find_in_dir(prefix: &Path, lines: &[Item]) -> RangeInclusive<usize> {
         if idx < start {
             start = idx;
         }
-        end = idx;
+        end = idx + 1;
     }
 
-    start..=end
+    start..end
 }
 
 pub fn file_to_item(level: Level, path: &Path, file: &File) -> Item {

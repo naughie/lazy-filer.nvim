@@ -3,7 +3,7 @@ use nvim_rs::{Buffer, Neovim};
 
 use super::{Action, DirArg, States};
 
-use super::utils::{self};
+use super::utils;
 use crate::fs::File;
 
 pub struct NewFiler {

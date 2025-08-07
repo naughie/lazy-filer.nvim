@@ -3,7 +3,7 @@ use nvim_rs::Buffer;
 
 use super::{Action, DirArg, States};
 
-use super::utils::{self};
+use super::utils;
 
 pub struct MoveToParent {
     pub buf: Buffer<NvimWtr>,

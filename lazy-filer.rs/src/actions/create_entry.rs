@@ -1,8 +1,7 @@
 use super::{NvimErr, NvimWtr};
 use nvim_rs::Buffer;
 
-use super::item::Level;
-use super::states::Items;
+use super::renderer::{Items, Level, LineIdx};
 use super::utils;
 use super::{Action, States};
 use crate::fs::File;
@@ -13,7 +12,7 @@ use std::os::unix::fs::{DirBuilderExt as _, OpenOptionsExt as _};
 use std::path::{Path, PathBuf};
 
 pub struct CreateEntry {
-    pub line_idx: i64,
+    pub line_idx: LineIdx,
     pub buf: Buffer<NvimWtr>,
     pub fname: String,
 }
@@ -24,7 +23,10 @@ impl Action for CreateEntry {
     async fn run(&self, states: &States) -> Result<Self::Resp, NvimErr> {
         let fname = safe_fname(&self.fname);
 
-        let Some(entry) = utils::get_path_at(self.line_idx, &states.actions.rendered_lines)
+        let Some(entry) = states
+            .actions
+            .rendered_lines
+            .get(self.line_idx)
             .and_then(|item| {
                 let dir = if item.metadata.is_dir() {
                     Some((&*item.path, item.level.increment()))
@@ -99,20 +101,16 @@ async fn insert(
     level: Level,
     file: &File,
 ) -> Result<(), NvimErr> {
-    let mut lock = lines.lock().await;
-
-    let idx = lock
-        .iter()
-        .enumerate()
-        .find_map(|(i, item)| if item.path < path { None } else { Some(i) })
-        .unwrap_or_default();
-
-    let item = utils::file_to_item(level, path, file);
-    buf.set_lines(idx as i64, idx as i64, false, vec![utils::make_line(&item)])
+    lines
+        .edit(buf)
+        .insert_dyn(utils::file_to_item(level, path, file), |lines| {
+            lines
+                .iter()
+                .enumerate()
+                .find_map(|(i, item)| if item.path < path { None } else { Some(i) })
+                .unwrap_or_default()
+        })
         .await?;
-
-    lock.insert(idx, item);
-    drop(lock);
 
     Ok(())
 }
