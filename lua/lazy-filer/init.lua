@@ -1,11 +1,15 @@
-local M = { rpc = {} }
+local M = {}
 
 local mkstate = require("glocal-states")
 local myui = require("my-ui")
 
 local api = vim.api
 
-local states = { jobid = mkstate.global() }
+local states = {
+    jobid = mkstate.global(),
+
+    tmp_create_entry_states = { dir = nil }
+}
 local ui = myui.declare_ui({})
 
 local plugin_root = ""
@@ -44,79 +48,62 @@ local rpc_call = {
         vim.rpcnotify(jobid, "create_entry", buf, dir_line_idx, fname)
     end,
 
-    expand_dir = function()
+    expand_dir = function(line_idx)
         local jobid = states.jobid.get()
         if not jobid then return end
 
         local buf = get_or_create_buf()
 
-        local cursor = api.nvim_win_get_cursor(0)
-        local line_idx = cursor[1]
-
         vim.rpcnotify(jobid, "expand_dir", buf, line_idx - 1)
     end,
 
-    get_dir = function()
+    get_dir = function(line_idx)
         local jobid = states.jobid.get()
         if not jobid then return end
-
-        local cursor = api.nvim_win_get_cursor(0)
-        local line_idx = cursor[1]
 
         local dir = vim.rpcrequest(jobid, "get_dir", line_idx - 1)
         return { name = dir, idx = line_idx - 1 }
     end,
 
-    move_to_parent = function()
+    move_to_parent = function(cwd)
         local jobid = states.jobid.get()
         if not jobid then return end
 
         local buf = get_or_create_buf()
-        vim.rpcnotify(jobid, "move_to_parent", buf, vim.uv.cwd())
+        vim.rpcnotify(jobid, "move_to_parent", buf, cwd)
     end,
 
-    new_filer = function()
+    new_filer = function(cwd)
         local jobid = states.jobid.get()
         if not jobid then return end
 
         local buf = get_or_create_buf()
-        vim.rpcnotify(jobid, "new_filer", buf, vim.uv.cwd())
+        vim.rpcnotify(jobid, "new_filer", buf, cwd)
     end,
 
-    open_file = function()
+    open_file = function(line_idx)
         local jobid = states.jobid.get()
         if not jobid then return end
-
-        local cursor = api.nvim_win_get_cursor(0)
-        local line_idx = cursor[1]
 
         vim.rpcnotify(jobid, "open_file", line_idx - 1)
     end,
 
-    open_or_expand = function()
+    open_or_expand = function(line_idx)
         local jobid = states.jobid.get()
         if not jobid then return end
 
         local buf = get_or_create_buf()
-
-        local cursor = api.nvim_win_get_cursor(0)
-        local line_idx = cursor[1]
 
         vim.rpcnotify(jobid, "open_or_expand", buf, line_idx - 1)
     end,
 }
 
-function M.rpc.focus_on_last_active_win()
-    myui.close_all()
-    myui.focus_on_last_active_win()
-end
+local function get_line_idx()
+    local win = ui.main.get_win()
+    if not win then return end
 
-function M.rpc.open_filer_win()
-    if ui.main.get_win() then
-        ui.main.focus()
-    else
-        ui.main.open_float()
-    end
+    local cursor = api.nvim_win_get_cursor(win)
+    return cursor[1]
 end
 
 local function spawn_filer()
@@ -130,10 +117,6 @@ local function spawn_filer()
     end
 end
 
-local tmp_create_entry_states = {
-    dir = nil,
-}
-
 local function open_new_entry_win()
     if not ui.companion.get_buf() then
         ui.companion.create_buf(function(buf)
@@ -145,8 +128,10 @@ local function open_new_entry_win()
         end)
     end
 
-    local dir = rpc_call.get_dir()
-    tmp_create_entry_states.dir = dir
+    local line_idx = get_line_idx()
+
+    local dir = rpc_call.get_dir(line_idx)
+    states.tmp_create_entry_states.dir = dir
 
     ui.companion.set_lines(0, -1, false, {
         "Create a new entry in " .. dir.name,
@@ -164,10 +149,10 @@ end
 
 local function create_entry()
     vim.cmd("stopinsert")
-    if not tmp_create_entry_states.dir then return end
+    if not states.tmp_create_entry_states.dir then return end
 
-    local line_idx = tmp_create_entry_states.dir.idx
-    tmp_create_entry_states.dir = nil
+    local line_idx = states.tmp_create_entry_states.dir.idx
+    states.tmp_create_entry_states.dir = nil
 
     local lines = ui.companion.lines(2, 3, false)
     local fname = lines[1]
@@ -194,12 +179,33 @@ local function setup_autocmd()
 end
 
 M.fn = {
-    expand_dir = rpc_call.expand_dir,
-    get_dir = rpc_call.get_dir,
-    move_to_parent = rpc_call.move_to_parent,
-    new_filer = rpc_call.new_filer,
-    open_file = rpc_call.open_file,
-    open_or_expand = rpc_call.open_or_expand,
+    expand_dir = function()
+        local line_idx = get_line_idx()
+        rpc_call.expand_dir(line_idx)
+    end,
+
+    get_dir = function()
+        local line_idx = get_line_idx()
+        return rpc_call.get_dir(line_idx)
+    end,
+
+    move_to_parent = function()
+        rpc_call.move_to_parent(vim.uv.cwd())
+    end,
+
+    new_filer = function()
+        rpc_call.new_filer(vim.uv.cwd())
+    end,
+
+    open_file = function()
+        local line_idx = get_line_idx()
+        rpc_call.open_file(line_idx)
+    end,
+
+    open_or_expand = function()
+        local line_idx = get_line_idx()
+        rpc_call.open_or_expand(line_idx)
+    end,
 
     create_entry = create_entry,
     open_new_entry_win = open_new_entry_win,
@@ -217,6 +223,21 @@ M.fn = {
     end,
     close_subwin = function()
         ui.companion.close()
+    end,
+}
+
+M.rpc = {
+    focus_on_last_active_win = function()
+        myui.close_all()
+        myui.focus_on_last_active_win()
+    end,
+
+    open_filer_win = function()
+        if ui.main.get_win() then
+            ui.main.focus()
+        else
+            ui.main.open_float()
+        end
     end,
 }
 
