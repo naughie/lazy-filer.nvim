@@ -58,6 +58,14 @@ impl NeovimHandler {
     async fn open_or_expand(&self, arg: &OpenOrExpand) {
         arg.run(&self.states).await.ok();
     }
+
+    async fn refresh(&self, arg: &Refresh) {
+        arg.run(&self.states).await.ok();
+    }
+
+    async fn rename_entry(&self, arg: &RenameEntry) {
+        arg.run(&self.states).await.ok();
+    }
 }
 
 impl Handler for NeovimHandler {
@@ -151,6 +159,48 @@ impl Handler for NeovimHandler {
 
                 self.delete_entry(&arg).await;
             }
+            "rename_entry" => {
+                let mut args = args.into_iter();
+
+                let Some(buf_id) = args.next() else {
+                    return;
+                };
+                let Some(line_idx) = args.next() else {
+                    return;
+                };
+                let Ok(line_idx) = line_idx.try_into() else {
+                    return;
+                };
+                let Some(dir) = args.next() else {
+                    return;
+                };
+                let Value::String(dir) = dir else {
+                    return;
+                };
+                let Some(dir) = dir.into_str() else {
+                    return;
+                };
+                let Some(path) = args.next() else {
+                    return;
+                };
+                let Value::String(path) = path else {
+                    return;
+                };
+                let Some(path) = path.into_str() else {
+                    return;
+                };
+
+                let buf = Buffer::new(buf_id, neovim.clone());
+
+                let arg = RenameEntry {
+                    buf,
+                    line_idx,
+                    dir: dir.into(),
+                    path,
+                };
+
+                self.rename_entry(&arg).await;
+            }
             "new_filer" => {
                 let mut args = args.into_iter();
 
@@ -176,6 +226,31 @@ impl Handler for NeovimHandler {
                 };
 
                 self.new_filer(&arg).await;
+            }
+            "refresh" => {
+                let mut args = args.into_iter();
+
+                let Some(buf_id) = args.next() else {
+                    return;
+                };
+                let Some(dir) = args.next() else {
+                    return;
+                };
+                let Value::String(dir) = dir else {
+                    return;
+                };
+                let Some(dir) = dir.into_str() else {
+                    return;
+                };
+
+                let buf = Buffer::new(buf_id, neovim.clone());
+
+                let arg = Refresh {
+                    buf,
+                    dir: dir.into(),
+                };
+
+                self.refresh(&arg).await;
             }
             "move_to_parent" => {
                 let mut args = args.into_iter();

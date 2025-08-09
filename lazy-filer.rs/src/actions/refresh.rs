@@ -1,17 +1,16 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::{Buffer, Neovim};
+use nvim_rs::Buffer;
 
 use super::{Action, DirArg, States};
 
 use super::utils;
 
-pub struct NewFiler {
+pub struct Refresh {
     pub buf: Buffer<NvimWtr>,
     pub dir: DirArg,
-    pub nvim: Neovim<NvimWtr>,
 }
 
-impl Action for NewFiler {
+impl Action for Refresh {
     type Resp = ();
 
     async fn run(&self, states: &States) -> Result<Self::Resp, NvimErr> {
@@ -21,12 +20,6 @@ impl Action for NewFiler {
         let expanded_dir = states.actions.expanded_dir.clone().await;
 
         let target_dir = utils::get_entries(&states.root_file, dir).await;
-        target_dir.update_with_readdir().await?;
-
-        target_dir
-            .render_entire_buffer(&self.buf, &states.actions.rendered_lines, &expanded_dir)
-            .await?;
-        open_filer_win(&self.nvim).await?;
 
         target_dir
             .update_with_readdir_recursive(&expanded_dir)
@@ -38,11 +31,4 @@ impl Action for NewFiler {
 
         Ok(())
     }
-}
-
-async fn open_filer_win(nvim: &Neovim<NvimWtr>) -> Result<(), NvimErr> {
-    nvim.exec_lua("require('lazy-filer').rpc.open_filer_win()", vec![])
-        .await?;
-
-    Ok(())
 }

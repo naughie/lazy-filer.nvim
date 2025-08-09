@@ -52,7 +52,14 @@ pub async fn expand_dir(
             .actions
             .rendered_lines
             .edit(buf)
-            .remove_range(|lines| utils::find_in_dir(path, lines))
+            .remove_range(|lines| {
+                let range = utils::find_in_dir(path, lines);
+                if range.start == range.end {
+                    range
+                } else {
+                    (range.start + 1)..(range.end)
+                }
+            })
             .await?;
     } else {
         states.actions.expanded_dir.insert(path.to_path_buf()).await;

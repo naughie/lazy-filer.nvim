@@ -9,6 +9,7 @@ local states = {
     jobid = mkstate.global(),
 
     tmp_create_entry_states = { dir = nil },
+    tmp_rename_entry_states = { file = nil, cwd = nil },
 
     dir_displayed = mkstate.tab(),
 }
@@ -18,7 +19,10 @@ local plugin_root = ""
 
 local companion_keymaps = {
     new_entry = {},
+    rename_entry = {},
 }
+
+local augroup = vim.api.nvim_create_augroup("NaughieLazyFiler", { clear = true })
 
 local function define_keymaps_wrap(args, default_opts)
     local opts = vim.tbl_deep_extend("force", vim.deepcopy(default_opts), args[4] or {})
@@ -115,6 +119,24 @@ local rpc_call = {
 
         vim.rpcnotify(jobid, "open_or_expand", buf, line_idx - 1)
     end,
+
+    refresh = function(cwd)
+        local jobid = states.jobid.get()
+        if not jobid then return end
+
+        local buf = get_or_create_buf()
+
+        vim.rpcnotify(jobid, "refresh", buf, cwd)
+    end,
+
+    rename_entry = function(dir_line_idx, new_path, cwd)
+        local jobid = states.jobid.get()
+        if not jobid then return end
+
+        local buf = get_or_create_buf()
+
+        vim.rpcnotify(jobid, "rename_entry", buf, dir_line_idx, cwd, new_path)
+    end,
 }
 
 local function get_line_idx()
@@ -158,7 +180,16 @@ local function open_new_entry_win()
         "",
     })
 
-    ui.companion.open_float()
+    ui.companion.open_float(function(win)
+        api.nvim_create_autocmd("WinClosed", {
+            group = augroup,
+            pattern = tostring(win),
+            callback = function()
+                ui.companion.delete_buf()
+                states.tmp_create_entry_states.dir = nil
+            end,
+        })
+    end)
 
     local win = ui.companion.get_win()
     if not win then return end
@@ -171,7 +202,6 @@ local function create_entry()
     if not states.tmp_create_entry_states.dir then return end
 
     local line_idx = states.tmp_create_entry_states.dir.idx
-    states.tmp_create_entry_states.dir = nil
 
     local lines = ui.companion.lines(2, 3, false)
     local fname = lines[1]
@@ -235,6 +265,67 @@ local function open_delete_entry_win()
     define_keymaps_wrap({ 'n', 'q', close }, { buffer = buf, silent = true })
 end
 
+local function open_rename_entry_win()
+    if not ui.companion.get_buf() then
+        ui.companion.create_buf(function(buf)
+            if companion_keymaps.rename_entry then
+                for _, args in ipairs(companion_keymaps.rename_entry) do
+                    define_keymaps_wrap(args, { buffer = buf, silent = true })
+                end
+            end
+        end)
+    end
+
+    local line_idx = get_line_idx()
+
+    local file = rpc_call.get_file_path(line_idx)
+    states.tmp_rename_entry_states.file = file
+
+    ui.companion.set_lines(0, -1, false, {
+        "Rename an entry: " .. file.name,
+        "",
+    })
+
+    ui.companion.open_float(function(win)
+        local cwd = vim.uv.cwd()
+        states.tmp_rename_entry_states.cwd = cwd
+        local parent = vim.fs.dirname(states.tmp_rename_entry_states.file.name)
+        vim.uv.chdir(parent)
+
+        api.nvim_create_autocmd("WinClosed", {
+            group = augroup,
+            pattern = tostring(win),
+            callback = function()
+                ui.companion.delete_buf()
+                vim.uv.chdir(states.tmp_rename_entry_states.cwd)
+                states.tmp_rename_entry_states = { file = nil, cwd = nil }
+            end,
+        })
+    end)
+
+    local win = ui.companion.get_win()
+    if not win then return end
+    api.nvim_win_set_cursor(win, { 2, 0 })
+    vim.cmd("startinsert")
+end
+
+local function rename_entry()
+    vim.cmd("stopinsert")
+    if not states.tmp_rename_entry_states.file then return end
+    local cwd = states.dir_displayed.get()
+    if not cwd then return end
+
+    local line_idx = states.tmp_rename_entry_states.file.idx
+
+    local lines = ui.companion.lines(1, 2, false)
+    local path = lines[1]
+
+    ui.companion.close()
+    ui.main.focus()
+
+    rpc_call.rename_entry(line_idx, path, cwd)
+end
+
 function M.build_and_spawn_filer(root_dir)
     plugin_root = root_dir
     vim.system({ "cargo", "build", "--release" }, { cwd = plugin_root }, function()
@@ -243,8 +334,7 @@ function M.build_and_spawn_filer(root_dir)
 end
 
 local function setup_autocmd()
-    local augroup = vim.api.nvim_create_augroup("NaughieLazyFiler", { clear = true })
-    vim.api.nvim_create_autocmd("VimEnter", {
+    api.nvim_create_autocmd("VimEnter", {
         group = augroup,
         callback = spawn_filer,
     })
@@ -286,9 +376,22 @@ M.fn = {
         rpc_call.open_or_expand(line_idx)
     end,
 
+    refresh = function()
+        local cwd = states.dir_displayed.get()
+        if cwd then
+            rpc_call.refresh(cwd)
+        else
+            cwd = vim.uv.cwd()
+            states.dir_displayed.set(cwd)
+            rpc_call.refresh(cwd)
+        end
+    end,
+
     create_entry = create_entry,
     open_new_entry_win = open_new_entry_win,
     open_delete_entry_win = open_delete_entry_win,
+    open_rename_entry_win = open_rename_entry_win,
+    rename_entry = rename_entry,
     spawn_filer = spawn_filer,
 
     move_to_filer = function()
@@ -341,6 +444,10 @@ function M.setup(opts)
 
         if opts.keymaps.new_entry then
             companion_keymaps.new_entry = opts.keymaps.new_entry
+        end
+
+        if opts.keymaps.rename_entry then
+            companion_keymaps.rename_entry = opts.keymaps.rename_entry
         end
     end
 

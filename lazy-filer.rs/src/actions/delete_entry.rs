@@ -43,18 +43,13 @@ impl Action for DeleteEntry {
                     return Ok(());
                 }
 
+                states.actions.expanded_dir.remove(&path).await;
+
                 states
                     .actions
                     .rendered_lines
                     .edit(&self.buf)
-                    .remove_range(|lines| {
-                        let range = utils::find_in_dir(&path, lines);
-                        if range.start == 0 {
-                            range
-                        } else {
-                            (range.start - 1)..(range.end)
-                        }
-                    })
+                    .remove_range(|lines| utils::find_in_dir(&path, lines))
                     .await?;
             }
             Entry::Single { parent, path } => {

@@ -70,12 +70,12 @@ impl Entries {
         self.0.lock().await.get(key).cloned()
     }
 
-    pub async fn remove<Q>(&self, key: &Q)
+    pub async fn remove<Q>(&self, key: &Q) -> Option<File>
     where
         Component: Borrow<Q>,
         Q: Ord + ?Sized,
     {
-        self.0.lock().await.remove(key);
+        self.0.lock().await.remove(key)
     }
 
     pub async fn insert(&self, key: Component, val: File) {

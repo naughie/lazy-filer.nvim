@@ -7,6 +7,7 @@ use crate::fs::{self, File, Permissions, RootFile};
 use std::collections::BTreeSet;
 use std::ffi::OsStr;
 use std::io::Error as IoErr;
+use std::marker::PhantomData;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 
@@ -22,16 +23,73 @@ pub async fn get_entries<'a>(root: &RootFile, dir: &'a Path) -> Entries<'a> {
     Entries { entries, dir }
 }
 
+async fn update_with_readdir(entries: &fs::Entries, dir: &Path) -> Result<(), NvimErr> {
+    use nvim_rs::error::CallError;
+
+    if let Err(e) = entries.update_with_readdir(dir).await {
+        let msg = e.to_string();
+        Err(Box::new(CallError::NeovimError(Some(0), msg)))
+    } else {
+        Ok(())
+    }
+}
+
 impl<'a> Entries<'a> {
     pub async fn update_with_readdir(&self) -> Result<(), NvimErr> {
-        use nvim_rs::error::CallError;
+        update_with_readdir(&self.entries, self.dir).await
+    }
 
-        if let Err(e) = self.entries.update_with_readdir(self.dir).await {
-            let msg = e.to_string();
-            Err(Box::new(CallError::NeovimError(Some(0), msg)))
-        } else {
-            Ok(())
+    pub async fn update_with_readdir_recursive(
+        &self,
+        expanded_dir: &BTreeSet<PathBuf>,
+    ) -> Result<(), NvimErr> {
+        let filter = |path: &Path| expanded_dir.contains(path);
+
+        let mut stack = {
+            let children = self.children().await;
+            let level = Level::base();
+            vec![(level.increment(), children.into_iter())]
+        };
+
+        while let Some(&mut (level, ref mut children)) = stack.last_mut() {
+            let Some((child_path, child)) = children.next() else {
+                stack.pop();
+                continue;
+            };
+
+            match child {
+                File::Directory { entries, perm: _ } => {
+                    update_with_readdir(&entries, &child_path).await?;
+
+                    if filter(&child_path) && level < Level::MAX {
+                        let mut children = Entries::children_in(&entries, &child_path).await;
+                        children.sort();
+                        stack.push((level.increment(), children.into_iter()));
+                    }
+                }
+                File::Link { to } => {
+                    let file = to.follow_link();
+
+                    if let File::Directory { entries, perm: _ } = file {
+                        update_with_readdir(entries, &child_path).await?;
+
+                        if filter(&child_path) && level < Level::MAX {
+                            let mut children = Entries::children_in(entries, &child_path).await;
+                            children.sort();
+                            stack.push((level.increment(), children.into_iter()));
+                        }
+                    }
+                }
+                _ => {}
+            }
         }
+
+        Ok(())
+    }
+
+    pub async fn remove(&self, path: &Path) -> Option<File> {
+        let fname = path.file_name()?;
+        self.entries.remove(fname).await
     }
 
     pub async fn remove_fs(&self, path: &Path, recursive: bool) -> Result<(), IoErr> {
@@ -55,8 +113,12 @@ impl<'a> Entries<'a> {
             .await;
     }
 
-    pub fn flatten(&self, level: Level) -> FlattenEntries<'a, '_> {
-        FlattenEntries { inner: self, level }
+    pub fn flatten(&self, level: Level) -> FlattenEntries<'a, '_, Item> {
+        FlattenEntries {
+            inner: self,
+            level,
+            marker: PhantomData,
+        }
     }
 
     pub async fn children(&self) -> Children {
@@ -102,32 +164,37 @@ impl Children {
     }
 }
 
-pub struct FlattenEntries<'a, 'e> {
+pub struct FlattenEntries<'a, 'e, T> {
     level: Level,
     inner: &'e Entries<'a>,
+    marker: PhantomData<T>,
 }
 
-impl<'a, 'e> FlattenEntries<'a, 'e> {
-    pub async fn filter<Filt>(self, filter: Filt) -> impl Stream<Item = Item>
+impl<'a, 'e, T> FlattenEntries<'a, 'e, T> {
+    pub async fn filter<Filt>(self, filter: Filt) -> impl Stream<Item = T>
     where
         Filt: for<'p> Fn(&'p Path) -> bool,
+        ResolvedEntry: Into<T>,
     {
         let inner = FlattenFilterEntries {
             inner: self.inner,
             filter,
+            marker: PhantomData,
         };
         inner.into_stream(self.level).await
     }
 }
 
-struct FlattenFilterEntries<'a, 'e, Filt> {
+struct FlattenFilterEntries<'a, 'e, T, Filt> {
     inner: &'e Entries<'a>,
     filter: Filt,
+    marker: PhantomData<T>,
 }
 
-impl<Filt> FlattenFilterEntries<'_, '_, Filt>
+impl<T, Filt> FlattenFilterEntries<'_, '_, T, Filt>
 where
     Filt: for<'p> Fn(&'p Path) -> bool,
+    ResolvedEntry: Into<T>,
 {
     async fn iter(self, level: Level) -> FlattenEntriesIter<Filt> {
         let mut children = self.inner.children().await;
@@ -140,12 +207,49 @@ where
         }
     }
 
-    async fn into_stream(self, level: Level) -> impl Stream<Item = Item> {
+    async fn into_stream(self, level: Level) -> impl Stream<Item = T> {
         let init = self.iter(level).await;
         futures::stream::unfold(init, |mut state| async {
             let v = state.next_item().await?;
-            Some((v, state))
+            Some((v.into(), state))
         })
+    }
+}
+
+pub struct ResolvedEntry {
+    level: Level,
+    path: PathBuf,
+    file: File,
+}
+
+impl From<ResolvedEntry> for Item {
+    fn from(value: ResolvedEntry) -> Self {
+        value.into_item()
+    }
+}
+
+impl ResolvedEntry {
+    fn into_item(self) -> Item {
+        let metadata = match self.file {
+            File::Regular { perm } => Metadata {
+                perm,
+                file_type: FileType::Regular,
+            },
+            File::Directory { perm, entries: _ } => Metadata {
+                perm,
+                file_type: FileType::Directory,
+            },
+            _ => Metadata {
+                perm: Permissions::default(),
+                file_type: FileType::Other,
+            },
+        };
+
+        Item {
+            level: self.level,
+            path: self.path,
+            metadata,
+        }
     }
 }
 
@@ -158,66 +262,51 @@ impl<Filt> FlattenEntriesIter<Filt>
 where
     Filt: for<'p> Fn(&'p Path) -> bool,
 {
-    async fn next_item(&mut self) -> Option<Item> {
+    async fn next_item(&mut self) -> Option<ResolvedEntry> {
         while let Some(&mut (level, ref mut children)) = self.stack.last_mut() {
             let Some((child_path, child)) = children.next() else {
                 self.stack.pop();
                 continue;
             };
 
-            let metadata = match child {
-                File::Regular { perm } => Metadata {
-                    perm,
-                    file_type: FileType::Regular,
-                },
+            let file = match child {
+                File::Regular { perm } => File::Regular { perm },
                 File::Directory { entries, perm } => {
-                    if (self.filter)(&child_path) {
+                    if (self.filter)(&child_path) && level < Level::MAX {
                         let mut children = Entries::children_in(&entries, &child_path).await;
                         children.sort();
                         self.stack.push((level.increment(), children.into_iter()));
                     }
 
-                    Metadata {
-                        perm,
-                        file_type: FileType::Directory,
-                    }
+                    File::Directory { perm, entries }
                 }
                 File::Link { to } => {
                     let file = to.follow_link();
 
                     match file {
-                        File::Regular { perm } => Metadata {
-                            perm: *perm,
-                            file_type: FileType::Regular,
-                        },
+                        &File::Regular { perm } => File::Regular { perm },
                         File::Directory { entries, perm } => {
-                            if (self.filter)(&child_path) {
+                            if (self.filter)(&child_path) && level < Level::MAX {
                                 let mut children = Entries::children_in(entries, &child_path).await;
                                 children.sort();
                                 self.stack.push((level.increment(), children.into_iter()));
                             }
 
-                            Metadata {
+                            File::Directory {
                                 perm: *perm,
-                                file_type: FileType::Directory,
+                                entries: entries.clone(),
                             }
                         }
-                        _ => Metadata {
-                            perm: Permissions::default(),
-                            file_type: FileType::Other,
-                        },
+                        _ => File::Other,
                     }
                 }
-                _ => Metadata {
-                    perm: Permissions::default(),
-                    file_type: FileType::Other,
-                },
+                _ => File::Other,
             };
 
-            return Some(Item {
+            return Some(ResolvedEntry {
                 level,
                 path: child_path,
-                metadata,
+                file,
             });
         }
 
@@ -232,7 +321,7 @@ pub fn find_in_dir(prefix: &Path, lines: &[Item]) -> Range<usize> {
     for idx in lines
         .iter()
         .enumerate()
-        .skip_while(|(_, item)| !item.path.starts_with(prefix) || item.path == prefix)
+        .skip_while(|(_, item)| !item.path.starts_with(prefix))
         .map_while(|(idx, item)| {
             if item.path.starts_with(prefix) {
                 Some(idx)

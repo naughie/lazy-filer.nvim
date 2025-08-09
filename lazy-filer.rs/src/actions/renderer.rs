@@ -14,7 +14,7 @@ use tokio::sync::MutexGuard;
 
 use futures::stream::{Stream, StreamExt as _};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Level(usize);
 
 impl Level {
@@ -36,6 +36,8 @@ impl Level {
             f();
         }
     }
+
+    pub const MAX: Self = Self(10);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -102,6 +104,10 @@ impl Items {
     pub fn get(&self, idx: LineIdx) -> PathGetter<'_> {
         PathGetter { inner: self, idx }
     }
+
+    pub fn iter(&self) -> ItemIter<'_> {
+        ItemIter { inner: self }
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -159,6 +165,41 @@ impl Edit<'_, '_> {
         drop(lock);
 
         self.buf.set_lines(0, -1, false, rendered).await?;
+
+        Ok(())
+    }
+
+    pub async fn replace_range<St, Func, Range>(self, lines: St, range: Func) -> Result<(), NvimErr>
+    where
+        St: Stream<Item = Item>,
+        Func: for<'a> FnOnce(&'a [Item]) -> Range,
+        Range: RangeBounds<usize>,
+    {
+        use std::ops::Bound;
+
+        let lines = lines.collect::<Vec<_>>().await;
+        let rendered = lines.iter().map(make_line).collect();
+
+        let mut lock = self.inner.lock().await;
+        let range = range(&lock);
+
+        let start = match range.start_bound() {
+            Bound::Included(&n) => n,
+            Bound::Excluded(&n) => n + 1,
+            Bound::Unbounded => 0,
+        };
+        let end = match range.end_bound() {
+            Bound::Included(&n) => n + 1,
+            Bound::Excluded(&n) => n,
+            Bound::Unbounded => lock.len(),
+        };
+
+        lock.splice(start..end, lines);
+        drop(lock);
+
+        self.buf
+            .set_lines(start as i64, end as i64, false, rendered)
+            .await?;
 
         Ok(())
     }
@@ -280,5 +321,19 @@ impl PathGetter<'_> {
             .as_usize(lock.len())
             .and_then(|idx| lock.get(idx))
             .and_then(f)
+    }
+}
+
+pub struct ItemIter<'a> {
+    inner: &'a Items,
+}
+
+impl ItemIter<'_> {
+    pub async fn fold<B, F>(self, init: B, f: F) -> B
+    where
+        F: for<'p> FnMut(B, &'p Item) -> B,
+    {
+        let lock = self.inner.lock().await;
+        lock.iter().fold(init, f)
     }
 }

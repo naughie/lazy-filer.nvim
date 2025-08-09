@@ -13,6 +13,8 @@ mod move_to_parent;
 mod new_filer;
 mod open_file;
 mod open_or_expand;
+mod refresh;
+mod rename_entry;
 
 use std::future::Future;
 use std::path::Path;
@@ -42,7 +44,8 @@ pub mod prelude {
     pub use super::{
         create_entry::CreateEntry, delete_entry::DeleteEntry, expand_dir::ExpandDir,
         get_dir::GetDir, get_file_path::GetFilePath, move_to_parent::MoveToParent,
-        new_filer::NewFiler, open_file::OpenFile, open_or_expand::OpenOrExpand,
+        new_filer::NewFiler, open_file::OpenFile, open_or_expand::OpenOrExpand, refresh::Refresh,
+        rename_entry::RenameEntry,
     };
 }
 
@@ -80,9 +83,25 @@ pub mod states {
             lock.insert(path);
         }
 
-        pub async fn remove(&self, path: &Path) {
+        pub async fn remove(&self, path: &Path) -> bool {
             let mut lock = self.0.lock().await;
-            lock.remove(path);
+            lock.remove(path)
+        }
+
+        pub fn lock(&self) -> ExpendedDirLock<'_> {
+            ExpendedDirLock(self)
+        }
+    }
+
+    pub struct ExpendedDirLock<'a>(&'a ExpendedDir);
+
+    impl ExpendedDirLock<'_> {
+        pub async fn then<Func, T>(self, f: Func) -> T
+        where
+            Func: for<'b> FnOnce(&'b mut BTreeSet<PathBuf>) -> T,
+        {
+            let mut lock = self.0.0.lock().await;
+            f(&mut lock)
         }
     }
 }
