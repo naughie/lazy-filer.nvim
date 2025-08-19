@@ -453,6 +453,10 @@ function M.setup(opts)
         end
     end
 
+    if opts.border then
+        ui.update_opts({ background = opts.border })
+    end
+
     setup_autocmd()
 end
 
