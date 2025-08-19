@@ -403,6 +403,7 @@ M.fn = {
 
     close_filer = function()
         ui.main.close()
+        myui.focus_on_last_active_ui()
     end,
     close_subwin = function()
         ui.companion.close()
