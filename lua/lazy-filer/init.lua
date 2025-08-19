@@ -406,6 +406,7 @@ M.fn = {
         myui.focus_on_last_active_ui()
     end,
     close_subwin = function()
+        ui.main.focus()
         ui.companion.close()
     end,
 }
