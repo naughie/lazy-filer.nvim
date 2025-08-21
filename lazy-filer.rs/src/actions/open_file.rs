@@ -54,7 +54,7 @@ pub async fn open_file(nvim: &Neovim<NvimWtr>, path: Value) -> Result<(), NvimEr
     };
 
     nvim.exec_lua(
-        "require('lazy-filer').rpc.focus_on_last_active_win()",
+        "require('lazy-filer.call_lua').focus_on_last_active_win()",
         vec![],
     )
     .await?;

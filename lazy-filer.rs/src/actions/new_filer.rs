@@ -41,7 +41,7 @@ impl Action for NewFiler {
 }
 
 async fn open_filer_win(nvim: &Neovim<NvimWtr>) -> Result<(), NvimErr> {
-    nvim.exec_lua("require('lazy-filer').rpc.open_filer_win()", vec![])
+    nvim.exec_lua("require('lazy-filer.call_lua').open_filer_win()", vec![])
         .await?;
 
     Ok(())
