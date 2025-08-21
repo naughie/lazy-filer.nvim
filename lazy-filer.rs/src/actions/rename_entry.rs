@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::Buffer;
+use nvim_rs::{Buffer, Neovim};
 
 use super::renderer::{Level, LineIdx};
 use super::utils;
@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 pub struct RenameEntry {
     pub line_idx: LineIdx,
+    pub nvim: Neovim<NvimWtr>,
     pub buf: Buffer<NvimWtr>,
     pub dir: DirArg,
     pub path: String,
@@ -111,7 +112,7 @@ impl Action for RenameEntry {
             states
                 .actions
                 .rendered_lines
-                .edit(&self.buf)
+                .edit(&self.nvim, &self.buf)
                 .replace_range(stream, |lines| {
                     let range = utils::find_in_dir(&ancestor, lines);
                     if range.start == range.end || level == Level::base() {
@@ -125,7 +126,7 @@ impl Action for RenameEntry {
             states
                 .actions
                 .rendered_lines
-                .edit(&self.buf)
+                .edit(&self.nvim, &self.buf)
                 .remove_range(|lines| utils::find_in_dir(&old_path, lines))
                 .await?;
         }

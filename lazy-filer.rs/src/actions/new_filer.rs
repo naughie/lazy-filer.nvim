@@ -24,7 +24,12 @@ impl Action for NewFiler {
         target_dir.update_with_readdir().await?;
 
         target_dir
-            .render_entire_buffer(&self.buf, &states.actions.rendered_lines, &expanded_dir)
+            .render_entire_buffer(
+                &self.nvim,
+                &self.buf,
+                &states.actions.rendered_lines,
+                &expanded_dir,
+            )
             .await?;
         open_filer_win(&self.nvim).await?;
 
@@ -33,7 +38,12 @@ impl Action for NewFiler {
             .await?;
 
         target_dir
-            .render_entire_buffer(&self.buf, &states.actions.rendered_lines, &expanded_dir)
+            .render_entire_buffer(
+                &self.nvim,
+                &self.buf,
+                &states.actions.rendered_lines,
+                &expanded_dir,
+            )
             .await?;
 
         Ok(())

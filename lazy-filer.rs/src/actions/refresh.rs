@@ -1,11 +1,12 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::Buffer;
+use nvim_rs::{Buffer, Neovim};
 
 use super::{Action, DirArg, States};
 
 use super::utils;
 
 pub struct Refresh {
+    pub nvim: Neovim<NvimWtr>,
     pub buf: Buffer<NvimWtr>,
     pub dir: DirArg,
 }
@@ -26,7 +27,12 @@ impl Action for Refresh {
             .await?;
 
         target_dir
-            .render_entire_buffer(&self.buf, &states.actions.rendered_lines, &expanded_dir)
+            .render_entire_buffer(
+                &self.nvim,
+                &self.buf,
+                &states.actions.rendered_lines,
+                &expanded_dir,
+            )
             .await?;
 
         Ok(())

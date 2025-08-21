@@ -1,4 +1,5 @@
 local ui = require("lazy-filer.states").ui
+local hl = require("lazy-filer.highlight")
 local myui = require("my-ui")
 
 return {
@@ -12,6 +13,16 @@ return {
             ui.main.focus()
         else
             ui.main.open_float()
+        end
+    end,
+
+    set_highlight = function(ranges)
+        local buf = ui.main.get_buf()
+        if not buf then return end
+
+        for _, range in ipairs(ranges) do
+            local fn = hl.set_extmark[range.hl]
+            if fn then fn(buf, range) end
         end
     end,
 }

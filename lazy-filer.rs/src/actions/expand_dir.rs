@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::Buffer;
+use nvim_rs::{Buffer, Neovim};
 
 use super::renderer::{Level, LineIdx};
 use super::utils;
@@ -9,6 +9,7 @@ use std::path::Path;
 
 pub struct ExpandDir {
     pub line_idx: LineIdx,
+    pub nvim: Neovim<NvimWtr>,
     pub buf: Buffer<NvimWtr>,
 }
 
@@ -32,7 +33,7 @@ impl Action for ExpandDir {
             return Ok(());
         };
 
-        expand_dir(self.line_idx, &self.buf, level, &path, states).await?;
+        expand_dir(self.line_idx, &self.nvim, &self.buf, level, &path, states).await?;
 
         Ok(())
     }
@@ -40,6 +41,7 @@ impl Action for ExpandDir {
 
 pub async fn expand_dir(
     line_idx: LineIdx,
+    nvim: &Neovim<NvimWtr>,
     buf: &Buffer<NvimWtr>,
     level: Level,
     path: &Path,
@@ -51,7 +53,7 @@ pub async fn expand_dir(
         states
             .actions
             .rendered_lines
-            .edit(buf)
+            .edit(nvim, buf)
             .remove_range(|lines| {
                 let range = utils::find_in_dir(path, lines);
                 if range.start == range.end {
@@ -76,7 +78,7 @@ pub async fn expand_dir(
         states
             .actions
             .rendered_lines
-            .edit(buf)
+            .edit(nvim, buf)
             .insert(stream, line_idx + 1)
             .await?;
     }

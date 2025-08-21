@@ -1,11 +1,11 @@
 local M = {}
 
 local states = require("lazy-filer.states")
-local ui = states.ui
-
 local rpc_call = require("lazy-filer.call_lib")
-
 local subwin = require("lazy-filer.subwin")
+local hl = require("lazy-filer.highlight")
+
+local ui = states.ui
 
 local myui = require("my-ui")
 
@@ -174,6 +174,8 @@ function M.setup(opts)
     if opts.border then
         ui.update_opts({ background = opts.border })
     end
+
+    hl.set_highlight_groups(opts.hl)
 
     setup_autocmd()
 end

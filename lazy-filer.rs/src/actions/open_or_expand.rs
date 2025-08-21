@@ -45,7 +45,7 @@ impl Action for OpenOrExpand {
         match path {
             Path::Regular(path) => open_file(&self.nvim, path).await?,
             Path::Directory(level, path) => {
-                expand_dir(self.line_idx, &self.buf, level, &path, states).await?
+                expand_dir(self.line_idx, &self.nvim, &self.buf, level, &path, states).await?
             }
         }
 

@@ -1,6 +1,6 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::Buffer;
 use nvim_rs::Value;
+use nvim_rs::{Buffer, Neovim};
 
 use crate::fs::Permissions;
 
@@ -97,8 +97,16 @@ impl Items {
         self.0.lock().await
     }
 
-    pub fn edit<'b>(&self, buf: &'b Buffer<NvimWtr>) -> Edit<'_, 'b> {
-        Edit { inner: self, buf }
+    pub fn edit<'n, 'b>(
+        &self,
+        nvim: &'n Neovim<NvimWtr>,
+        buf: &'b Buffer<NvimWtr>,
+    ) -> Edit<'_, 'n, 'b> {
+        Edit {
+            inner: self,
+            nvim,
+            buf,
+        }
     }
 
     pub fn get(&self, idx: LineIdx) -> PathGetter<'_> {
@@ -149,22 +157,26 @@ impl Add<i64> for LineIdx {
     }
 }
 
-pub struct Edit<'a, 'b> {
+pub struct Edit<'a, 'n, 'b> {
     inner: &'a Items,
+    nvim: &'n Neovim<NvimWtr>,
     buf: &'b Buffer<NvimWtr>,
 }
 
-impl Edit<'_, '_> {
+impl Edit<'_, '_, '_> {
     pub async fn replace_all(self, lines: impl Stream<Item = Item>) -> Result<(), NvimErr> {
         let lines = lines.collect::<Vec<_>>().await;
 
         let rendered = lines.iter().map(make_line).collect();
+
+        let hl_ranges = make_hl_ranges(0, &lines);
 
         let mut lock = self.inner.lock().await;
         *lock = lines;
         drop(lock);
 
         self.buf.set_lines(0, -1, false, rendered).await?;
+        highlight(self.nvim, hl_ranges).await?;
 
         Ok(())
     }
@@ -194,12 +206,15 @@ impl Edit<'_, '_> {
             Bound::Unbounded => lock.len(),
         };
 
+        let hl_ranges = make_hl_ranges(start as i64, &lines);
+
         lock.splice(start..end, lines);
         drop(lock);
 
         self.buf
             .set_lines(start as i64, end as i64, false, rendered)
             .await?;
+        highlight(self.nvim, hl_ranges).await?;
 
         Ok(())
     }
@@ -207,6 +222,11 @@ impl Edit<'_, '_> {
     pub async fn insert(self, lines: impl Stream<Item = Item>, at: LineIdx) -> Result<(), NvimErr> {
         let lines = lines.collect::<Vec<_>>().await;
         let rendered = lines.iter().map(make_line).collect();
+
+        let hl_ranges = {
+            let LineIdx(at) = at;
+            make_hl_ranges(at, &lines)
+        };
 
         let mut lock = self.inner.lock().await;
         if let Some(at) = at.as_usize(lock.len()) {
@@ -216,6 +236,7 @@ impl Edit<'_, '_> {
 
         let LineIdx(at) = at;
         self.buf.set_lines(at, at, false, rendered).await?;
+        highlight(self.nvim, hl_ranges).await?;
 
         Ok(())
     }
@@ -229,10 +250,13 @@ impl Edit<'_, '_> {
 
         let at = at(&lock);
 
+        let hl_ranges = make_hl_ranges(at as i64, [&item]);
+
         self.buf
             .set_lines(at as i64, at as i64, false, vec![make_line(&item)])
             .await?;
 
+        highlight(self.nvim, hl_ranges).await?;
         lock.insert(at, item);
 
         Ok(())
@@ -283,6 +307,64 @@ impl Edit<'_, '_> {
 
         Ok(())
     }
+}
+
+fn make_hl_ranges<'l, L>(start_line: i64, items: L) -> Vec<Value>
+where
+    L: IntoIterator<Item = &'l Item>,
+    L::IntoIter: ExactSizeIterator,
+{
+    fn hl_group(item: &Item) -> &'static str {
+        match item.metadata.file_type {
+            FileType::Regular => "regular",
+            FileType::Directory => "directory",
+            FileType::Other => "other_file",
+        }
+    }
+
+    let items = items.into_iter();
+    let mut ranges = Vec::with_capacity(2 * items.len());
+
+    for (i, item) in items.enumerate() {
+        let line = start_line + i as i64;
+
+        let offset = item.level.to_num() * 2;
+
+        let meta_range = offset..(offset + 6);
+        let fname_start = offset + 7;
+        let fname_end = {
+            let fname = item.path.file_name().unwrap_or_default();
+            fname_start + fname.to_string_lossy().len()
+        };
+
+        let meta_range = vec![
+            (Value::from("hl"), Value::from("metadata")),
+            (Value::from("line"), Value::from(line)),
+            (Value::from("start_col"), Value::from(meta_range.start)),
+            (Value::from("end_col"), Value::from(meta_range.end)),
+        ];
+        let fname_range = vec![
+            (Value::from("hl"), Value::from(hl_group(item))),
+            (Value::from("line"), Value::from(line)),
+            (Value::from("start_col"), Value::from(fname_start)),
+            (Value::from("end_col"), Value::from(fname_end)),
+        ];
+
+        ranges.push(Value::Map(meta_range));
+        ranges.push(Value::Map(fname_range));
+    }
+
+    ranges
+}
+
+async fn highlight(nvim: &Neovim<NvimWtr>, ranges: Vec<Value>) -> Result<(), NvimErr> {
+    nvim.exec_lua(
+        "require('lazy-filer.call_lua').set_highlight(...)",
+        vec![Value::Array(ranges)],
+    )
+    .await?;
+
+    Ok(())
 }
 
 pub fn make_line(item: &Item) -> String {

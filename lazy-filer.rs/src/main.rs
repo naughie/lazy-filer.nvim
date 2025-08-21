@@ -106,7 +106,7 @@ impl Handler for NeovimHandler {
         }
     }
 
-    async fn handle_notify(&self, name: String, args: Vec<Value>, neovim: Neovim<Self::Writer>) {
+    async fn handle_notify(&self, name: String, args: Vec<Value>, nvim: Neovim<Self::Writer>) {
         match name.as_str() {
             "create_entry" => {
                 let mut args = args.into_iter();
@@ -130,9 +130,10 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim.clone());
+                let buf = Buffer::new(buf_id, nvim.clone());
 
                 let arg = CreateEntry {
+                    nvim,
                     buf,
                     line_idx,
                     fname,
@@ -153,9 +154,13 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim.clone());
+                let buf = Buffer::new(buf_id, nvim.clone());
 
-                let arg = DeleteEntry { buf, line_idx };
+                let arg = DeleteEntry {
+                    nvim,
+                    buf,
+                    line_idx,
+                };
 
                 self.delete_entry(&arg).await;
             }
@@ -190,9 +195,10 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim.clone());
+                let buf = Buffer::new(buf_id, nvim.clone());
 
                 let arg = RenameEntry {
+                    nvim,
                     buf,
                     line_idx,
                     dir: dir.into(),
@@ -217,12 +223,12 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim.clone());
+                let buf = Buffer::new(buf_id, nvim.clone());
 
                 let arg = NewFiler {
+                    nvim,
                     buf,
                     dir: dir.into(),
-                    nvim: neovim,
                 };
 
                 self.new_filer(&arg).await;
@@ -243,9 +249,10 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim.clone());
+                let buf = Buffer::new(buf_id, nvim.clone());
 
                 let arg = Refresh {
+                    nvim,
                     buf,
                     dir: dir.into(),
                 };
@@ -268,9 +275,10 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim);
+                let buf = Buffer::new(buf_id, nvim.clone());
 
                 let arg = MoveToParent {
+                    nvim,
                     buf,
                     dir: dir.into(),
                 };
@@ -287,10 +295,7 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let arg = OpenFile {
-                    line_idx,
-                    nvim: neovim,
-                };
+                let arg = OpenFile { line_idx, nvim };
 
                 self.open_file(&arg).await;
             }
@@ -307,9 +312,13 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim.clone());
+                let buf = Buffer::new(buf_id, nvim.clone());
 
-                let arg = ExpandDir { line_idx, buf };
+                let arg = ExpandDir {
+                    line_idx,
+                    nvim,
+                    buf,
+                };
 
                 self.expand_dir(&arg).await;
             }
@@ -326,12 +335,12 @@ impl Handler for NeovimHandler {
                     return;
                 };
 
-                let buf = Buffer::new(buf_id, neovim.clone());
+                let buf = Buffer::new(buf_id, nvim.clone());
 
                 let arg = OpenOrExpand {
                     line_idx,
                     buf,
-                    nvim: neovim,
+                    nvim,
                 };
 
                 self.open_or_expand(&arg).await;
