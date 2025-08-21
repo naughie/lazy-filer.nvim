@@ -44,14 +44,17 @@ impl Level {
 pub enum FileType {
     Regular,
     Directory,
+    LinkRegular,
+    LinkDirectory,
+    LinkOther,
     Other,
 }
 impl FileType {
     fn to_s(self) -> u8 {
         match self {
-            Self::Regular => b'f',
-            Self::Directory => b'd',
-            Self::Other => b'-',
+            Self::Regular | Self::LinkRegular => b'f',
+            Self::Directory | Self::LinkDirectory => b'd',
+            Self::Other | Self::LinkOther => b'-',
         }
     }
 }
@@ -74,11 +77,21 @@ impl Metadata {
     }
 
     pub fn is_regular(self) -> bool {
-        matches!(self.file_type, FileType::Regular)
+        matches!(self.file_type, FileType::Regular | FileType::LinkRegular)
     }
 
     pub fn is_dir(self) -> bool {
-        matches!(self.file_type, FileType::Directory)
+        matches!(
+            self.file_type,
+            FileType::Directory | FileType::LinkDirectory
+        )
+    }
+
+    pub fn is_link(self) -> bool {
+        matches!(
+            self.file_type,
+            FileType::LinkRegular | FileType::LinkDirectory | FileType::LinkOther
+        )
     }
 }
 
@@ -316,9 +329,9 @@ where
 {
     fn hl_group(item: &Item) -> &'static str {
         match item.metadata.file_type {
-            FileType::Regular => "regular",
-            FileType::Directory => "directory",
-            FileType::Other => "other_file",
+            FileType::Regular | FileType::LinkRegular => "regular",
+            FileType::Directory | FileType::LinkDirectory => "directory",
+            FileType::Other | FileType::LinkOther => "other_file",
         }
     }
 
@@ -381,6 +394,9 @@ pub fn make_line(item: &Item) -> String {
     metadata.push(&mut ret);
     ret.push_str(&fname.to_string_lossy());
 
+    if metadata.is_link() {
+        ret.push('@');
+    }
     if metadata.is_dir() {
         ret.push('/');
     }

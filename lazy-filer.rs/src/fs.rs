@@ -109,7 +109,7 @@ impl Entries {
                 }
             } else if file_type.is_symlink() {
                 let path = entry.path();
-                if path.is_file() {
+                let file = if path.is_file() {
                     let metadata = path.metadata()?;
                     let perm = Permissions::from_std(metadata.permissions());
                     File::Regular { perm }
@@ -122,7 +122,8 @@ impl Entries {
                     }
                 } else {
                     File::Other
-                }
+                };
+                File::Link { to: Box::new(file) }
             } else {
                 File::Other
             };

@@ -175,7 +175,7 @@ impl<'a, 'e, T> FlattenEntries<'a, 'e, T> {
     pub async fn filter<Filt>(self, filter: Filt) -> impl Stream<Item = T>
     where
         Filt: for<'p> Fn(&'p Path) -> bool,
-        ResolvedEntry: Into<T>,
+        Item: Into<T>,
     {
         let inner = FlattenFilterEntries {
             inner: self.inner,
@@ -195,7 +195,7 @@ struct FlattenFilterEntries<'a, 'e, T, Filt> {
 impl<T, Filt> FlattenFilterEntries<'_, '_, T, Filt>
 where
     Filt: for<'p> Fn(&'p Path) -> bool,
-    ResolvedEntry: Into<T>,
+    Item: Into<T>,
 {
     async fn iter(self, level: Level) -> FlattenEntriesIter<Filt> {
         let mut children = self.inner.children().await;
@@ -217,43 +217,6 @@ where
     }
 }
 
-pub struct ResolvedEntry {
-    level: Level,
-    path: PathBuf,
-    file: File,
-}
-
-impl From<ResolvedEntry> for Item {
-    fn from(value: ResolvedEntry) -> Self {
-        value.into_item()
-    }
-}
-
-impl ResolvedEntry {
-    fn into_item(self) -> Item {
-        let metadata = match self.file {
-            File::Regular { perm } => Metadata {
-                perm,
-                file_type: FileType::Regular,
-            },
-            File::Directory { perm, entries: _ } => Metadata {
-                perm,
-                file_type: FileType::Directory,
-            },
-            _ => Metadata {
-                perm: Permissions::default(),
-                file_type: FileType::Other,
-            },
-        };
-
-        Item {
-            level: self.level,
-            path: self.path,
-            metadata,
-        }
-    }
-}
-
 struct FlattenEntriesIter<Filt> {
     stack: Vec<(Level, <Children as IntoIterator>::IntoIter)>,
     filter: Filt,
@@ -263,15 +226,18 @@ impl<Filt> FlattenEntriesIter<Filt>
 where
     Filt: for<'p> Fn(&'p Path) -> bool,
 {
-    async fn next_item(&mut self) -> Option<ResolvedEntry> {
+    async fn next_item(&mut self) -> Option<Item> {
         while let Some(&mut (level, ref mut children)) = self.stack.last_mut() {
             let Some((child_path, child)) = children.next() else {
                 self.stack.pop();
                 continue;
             };
 
-            let file = match child {
-                File::Regular { perm } => File::Regular { perm },
+            let metadata = match child {
+                File::Regular { perm } => Metadata {
+                    perm,
+                    file_type: FileType::Regular,
+                },
                 File::Directory { entries, perm } => {
                     if (self.filter)(&child_path) && level < Level::MAX {
                         let mut children = Entries::children_in(&entries, &child_path).await;
@@ -279,13 +245,19 @@ where
                         self.stack.push((level.increment(), children.into_iter()));
                     }
 
-                    File::Directory { perm, entries }
+                    Metadata {
+                        perm,
+                        file_type: FileType::Directory,
+                    }
                 }
                 File::Link { to } => {
                     let file = to.follow_link();
 
                     match file {
-                        &File::Regular { perm } => File::Regular { perm },
+                        &File::Regular { perm } => Metadata {
+                            perm,
+                            file_type: FileType::LinkRegular,
+                        },
                         File::Directory { entries, perm } => {
                             if (self.filter)(&child_path) && level < Level::MAX {
                                 let mut children = Entries::children_in(entries, &child_path).await;
@@ -293,21 +265,27 @@ where
                                 self.stack.push((level.increment(), children.into_iter()));
                             }
 
-                            File::Directory {
+                            Metadata {
                                 perm: *perm,
-                                entries: entries.clone(),
+                                file_type: FileType::LinkDirectory,
                             }
                         }
-                        _ => File::Other,
+                        _ => Metadata {
+                            perm: Permissions::default(),
+                            file_type: FileType::LinkOther,
+                        },
                     }
                 }
-                _ => File::Other,
+                _ => Metadata {
+                    perm: Permissions::default(),
+                    file_type: FileType::Other,
+                },
             };
 
-            return Some(ResolvedEntry {
+            return Some(Item {
                 level,
                 path: child_path,
-                file,
+                metadata,
             });
         }
 
@@ -355,15 +333,15 @@ pub fn file_to_item(level: Level, path: &Path, file: &File) -> Item {
             match *file {
                 File::Regular { perm } => Metadata {
                     perm,
-                    file_type: FileType::Regular,
+                    file_type: FileType::LinkRegular,
                 },
                 File::Directory { perm, entries: _ } => Metadata {
                     perm,
-                    file_type: FileType::Directory,
+                    file_type: FileType::LinkDirectory,
                 },
                 _ => Metadata {
                     perm: Permissions::default(),
-                    file_type: FileType::Other,
+                    file_type: FileType::LinkOther,
                 },
             }
         }
