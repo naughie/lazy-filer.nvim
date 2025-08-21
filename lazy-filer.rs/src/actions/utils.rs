@@ -93,13 +93,47 @@ impl<'a> Entries<'a> {
     }
 
     pub async fn remove_fs(&self, path: &Path, recursive: bool) -> Result<(), IoErr> {
+        async fn remove_recursive(file: File) {
+            let mut stack = match file {
+                File::Directory { perm: _, entries } => vec![entries],
+                File::Link { to } => {
+                    let file = to.follow_link_owned();
+                    match file {
+                        File::Directory { perm: _, entries } => vec![entries],
+                        _ => return,
+                    }
+                }
+                _ => return,
+            };
+
+            while let Some(entries) = stack.pop() {
+                let files = entries.clear().await;
+                for file in files.into_values() {
+                    match file {
+                        File::Directory { perm: _, entries } => stack.push(entries),
+                        File::Link { to } => {
+                            let file = to.follow_link_owned();
+                            match file {
+                                File::Directory { perm: _, entries } => stack.push(entries),
+                                _ => continue,
+                            }
+                        }
+                        _ => continue,
+                    }
+                }
+            }
+        }
+
         let Some(fname) = path.file_name() else {
             return Ok(());
         };
 
-        self.entries.remove(fname).await;
+        let file = self.entries.remove(fname).await;
 
         if recursive {
+            if let Some(file) = file {
+                remove_recursive(file).await;
+            }
             std::fs::remove_dir_all(path)
         } else {
             std::fs::remove_file(path)

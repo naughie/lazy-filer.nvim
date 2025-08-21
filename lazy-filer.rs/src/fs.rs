@@ -82,6 +82,11 @@ impl Entries {
         self.0.lock().await.insert(key, val);
     }
 
+    pub async fn clear(&self) -> BTreeMap<Component, File> {
+        let mut lock = self.0.lock().await;
+        std::mem::take(&mut lock)
+    }
+
     pub async fn children(&self) -> ChildrenIntoIter<'_> {
         ChildrenIntoIter(self.0.lock().await)
     }
@@ -157,6 +162,16 @@ impl File {
         loop {
             match ret {
                 File::Link { to } => ret = to,
+                _ => return ret,
+            }
+        }
+    }
+
+    pub fn follow_link_owned(self) -> Self {
+        let mut ret = self;
+        loop {
+            match ret {
+                File::Link { to } => ret = *to,
                 _ => return ret,
             }
         }

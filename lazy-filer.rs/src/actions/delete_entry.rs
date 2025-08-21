@@ -17,7 +17,7 @@ impl Action for DeleteEntry {
     type Resp = ();
 
     async fn run(&self, states: &States) -> Result<Self::Resp, NvimErr> {
-        let Some(entry) = states
+        let Some((is_link, entry)) = states
             .actions
             .rendered_lines
             .get(self.line_idx)
@@ -25,10 +25,12 @@ impl Action for DeleteEntry {
                 item.path.parent().map(|parent| {
                     let path = item.path.to_path_buf();
                     let parent = parent.to_path_buf();
+                    let is_link = item.metadata.is_link();
+
                     if item.metadata.is_dir() {
-                        Entry::Recursive { parent, path }
+                        (is_link, Entry::Recursive { parent, path })
                     } else {
-                        Entry::Single { parent, path }
+                        (is_link, Entry::Single { parent, path })
                     }
                 })
             })
@@ -40,7 +42,7 @@ impl Action for DeleteEntry {
         match entry {
             Entry::Recursive { parent, path } => {
                 let target_dir = utils::get_entries(&states.root_file, &parent).await;
-                if target_dir.remove_fs(&path, true).await.is_err() {
+                if target_dir.remove_fs(&path, !is_link).await.is_err() {
                     return Ok(());
                 }
 
