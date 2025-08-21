@@ -1,6 +1,6 @@
 use super::NvimErr;
 
-use nvim_rs::Value;
+use nvim_router::nvim_rs::Value;
 
 use super::renderer::LineIdx;
 use super::{Action, States};

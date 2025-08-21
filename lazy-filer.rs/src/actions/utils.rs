@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::{Buffer, Neovim};
 
 use super::renderer::{FileType, Item, Items, Level, Metadata};
 use crate::fs::{self, File, Permissions, RootFile};
@@ -24,7 +24,7 @@ pub async fn get_entries<'a>(root: &RootFile, dir: &'a Path) -> Entries<'a> {
 }
 
 async fn update_with_readdir(entries: &fs::Entries, dir: &Path) -> Result<(), NvimErr> {
-    use nvim_rs::error::CallError;
+    use nvim_router::nvim_rs::error::CallError;
 
     if let Err(e) = entries.update_with_readdir(dir).await {
         let msg = e.to_string();

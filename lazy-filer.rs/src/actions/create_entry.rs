@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::{Buffer, Neovim};
 
 use super::renderer::{Items, Level, LineIdx};
 use super::utils;

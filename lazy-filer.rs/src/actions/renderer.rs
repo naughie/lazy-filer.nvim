@@ -1,6 +1,6 @@
 use super::{NvimErr, NvimWtr};
-use nvim_rs::Value;
-use nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::Value;
+use nvim_router::nvim_rs::{Buffer, Neovim};
 
 use crate::fs::Permissions;
 
@@ -135,14 +135,6 @@ impl Items {
 pub struct LineIdx(i64);
 
 impl LineIdx {
-    fn from_value(n: Value) -> Option<Self> {
-        let Value::Integer(line_idx) = n else {
-            return None;
-        };
-        let line_idx = line_idx.as_i64()?;
-        Some(Self(line_idx))
-    }
-
     fn as_usize(self, len: usize) -> Option<usize> {
         let idx = self.0;
         if idx >= 0 {
@@ -154,11 +146,9 @@ impl LineIdx {
     }
 }
 
-impl TryFrom<Value> for LineIdx {
-    type Error = Value;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        Self::from_value(value).ok_or(Value::Nil)
+impl From<i64> for LineIdx {
+    fn from(value: i64) -> Self {
+        Self(value)
     }
 }
 

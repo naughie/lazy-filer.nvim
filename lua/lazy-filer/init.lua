@@ -13,35 +13,12 @@ local api = vim.api
 
 local plugin_root = ""
 
-local augroup = api.nvim_create_augroup("NaughieLazyFiler", { clear = true })
-
-local function get_command_path()
-    return plugin_root .. "/lazy-filer.rs/target/release/lazy-filer"
-end
-
-local function spawn_filer()
-    if states.jobid.get() then return end
-    local server_cmd = get_command_path()
-    if vim.fn.executable(server_cmd) == 0 then return end
-
-    local id = vim.fn.jobstart({ server_cmd }, { rpc = true })
-    if id ~= 0 and id ~= 1 then
-        states.jobid.set(id)
+function M.lib_info(root_dir)
+    if root_dir then
+        return rpc_call.get_info(root_dir)
+    else
+        return rpc_call.get_info(plugin_root)
     end
-end
-
-function M.build_and_spawn_filer(root_dir)
-    plugin_root = root_dir
-    vim.system({ "cargo", "build", "--release" }, { cwd = plugin_root }, function()
-        vim.schedule(spawn_filer)
-    end)
-end
-
-local function setup_autocmd()
-    api.nvim_create_autocmd("VimEnter", {
-        group = augroup,
-        callback = spawn_filer,
-    })
 end
 
 local function get_line_idx()
@@ -104,7 +81,6 @@ M.fn = {
     open_delete_entry_win = subwin.delete_entry.open_win,
     open_rename_entry_win = subwin.rename_entry.open_win,
     rename_entry = subwin.rename_entry.exec,
-    spawn_filer = spawn_filer,
 
     move_to_filer = function()
         ui.main.focus()
@@ -175,9 +151,11 @@ function M.setup(opts)
         ui.update_opts({ background = opts.border })
     end
 
-    hl.set_highlight_groups(opts.hl)
+    if opts.rpc_ns then
+        rpc_call.update_ns(opts.rpc_ns)
+    end
 
-    setup_autocmd()
+    hl.set_highlight_groups(opts.hl)
 end
 
 return M
