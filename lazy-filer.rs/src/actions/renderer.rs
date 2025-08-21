@@ -334,6 +334,9 @@ where
             FileType::Other | FileType::LinkOther => "other_file",
         }
     }
+    fn hl_link_to() -> &'static str {
+        "link_to"
+    }
 
     let items = items.into_iter();
     let mut ranges = Vec::with_capacity(2 * items.len());
@@ -365,6 +368,19 @@ where
 
         ranges.push(Value::Map(meta_range));
         ranges.push(Value::Map(fname_range));
+
+        if item.metadata.is_link()
+            && let Ok(target) = std::fs::read_link(&item.path)
+        {
+            let target = format!("  --> {}", target.display());
+            let opts = vec![
+                (Value::from("hl"), Value::from(hl_link_to())),
+                (Value::from("line"), Value::from(line)),
+                (Value::from("target"), Value::from(target)),
+            ];
+
+            ranges.push(Value::Map(opts));
+        }
     }
 
     ranges

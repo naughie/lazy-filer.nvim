@@ -9,6 +9,7 @@ local default_hl = {
     metadata = { link = "Comment" },
     regular = { link = "Normal" },
     other_file = { link = "Comment" },
+    link_to = { link = "Comment" },
 }
 
 local hl_names = {
@@ -16,6 +17,7 @@ local hl_names = {
     metadata = "LazyFilerMetadata",
     regular = "LazyFilerRegular",
     other_file = "LazyFilerOther",
+    link_to = "LazyFilerLinkTo",
 }
 
 function M.set_highlight_groups(opts)
@@ -38,6 +40,12 @@ for key, hl in pairs(hl_names) do
             hl_group = hl,
         })
     end
+end
+M.set_extmark.link_to = function(buf, opts)
+    api.nvim_buf_set_extmark(buf, ns, opts.line, 0, {
+        virt_text = { { opts.target, hl_names.link_to } },
+        virt_text_pos = "eol",
+    })
 end
 
 return M
