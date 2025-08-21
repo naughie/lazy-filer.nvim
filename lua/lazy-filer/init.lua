@@ -114,8 +114,8 @@ M.fn = {
     end,
 
     close_filer = function()
+        if not myui.focus_on_last_active_ui() then myui.focus_on_last_active_win() end
         ui.main.close()
-        myui.focus_on_last_active_ui()
     end,
     close_subwin = function()
         ui.main.focus()
