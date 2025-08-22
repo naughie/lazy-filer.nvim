@@ -9,7 +9,7 @@ local function rpcnotify(name, ...)
     ns_rpc.notify(ns.value, name, ...)
 end
 local function rpcrequest(name, ...)
-    return rpc.request(ns.value, name, ...)
+    return ns_rpc.request(ns.value, name, ...)
 end
 
 local function get_or_create_buf()
