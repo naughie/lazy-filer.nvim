@@ -74,8 +74,8 @@ M.create_entry = {
         local lines = ui.companion.lines(2, 3, false)
         local fname = lines[1]
 
-        ui.companion.close()
         ui.main.focus()
+        ui.companion.close()
 
         rpc_call.create_entry(line_idx, fname)
     end,
@@ -87,7 +87,23 @@ M.delete_entry = {
 
         local file = rpc_call.get_file_path(line_idx)
 
-        local buf = api.nvim_create_buf(false, true)
+        if not ui.companion.get_buf() then
+            local close = function()
+                ui.main.focus()
+                ui.companion.close()
+            end
+            local confirm = function()
+                close()
+                rpc_call.delete_entry(file.idx)
+            end
+
+            ui.companion.create_buf(function(buf)
+                vim.keymap.set('n', 'y', confirm, { buffer = buf, silent = true })
+                vim.keymap.set('n', 'n', close, { buffer = buf, silent = true })
+                vim.keymap.set('n', '<ESC>', close, { buffer = buf, silent = true })
+                vim.keymap.set('n', 'q', close, { buffer = buf, silent = true })
+            end)
+        end
 
         local prompt = {
             "",
@@ -97,6 +113,7 @@ M.delete_entry = {
             "",
             "",
         }
+        ui.companion.set_lines(0, -1, false, prompt)
 
         local width = 0
         for _, line in ipairs(prompt) do
@@ -105,34 +122,22 @@ M.delete_entry = {
         width = width + 4
         local height = #prompt
 
-        local top = math.floor((vim.o.lines - height) / 2)
-        local left = math.floor((vim.o.columns - width) / 2)
-
-        api.nvim_buf_set_lines(buf, 0, -1, false, prompt)
-
-        local win = vim.api.nvim_open_win(buf, true, {
-            relative = "editor",
-            style = "minimal",
+        local geom = {
             width = width,
             height = height,
-            row = top,
-            col = left,
-            border = "rounded",
-        })
+            col = math.floor((vim.o.columns - width) / 2),
+            row = math.floor((vim.o.lines - height) / 2),
+        }
 
-        local close = function()
-            api.nvim_win_close(win, true)
-            api.nvim_buf_delete(buf, { force = true })
-        end
-        local confirm = function()
-            close()
-            rpc_call.delete_entry(file.idx)
-        end
-
-        vim.keymap.set('n', 'y', confirm, { buffer = buf, silent = true })
-        vim.keymap.set('n', 'n', close, { buffer = buf, silent = true })
-        vim.keymap.set('n', '<ESC>', close, { buffer = buf, silent = true })
-        vim.keymap.set('n', 'q', close, { buffer = buf, silent = true })
+        ui.companion.open_float(function(win)
+            api.nvim_create_autocmd("WinClosed", {
+                group = augroup,
+                pattern = tostring(win),
+                callback = function()
+                    ui.companion.delete_buf()
+                end,
+            })
+        end, geom)
     end,
 }
 
@@ -190,8 +195,8 @@ M.rename_entry = {
         local lines = ui.companion.lines(1, 2, false)
         local path = lines[1]
 
-        ui.companion.close()
         ui.main.focus()
+        ui.companion.close()
 
         rpc_call.rename_entry(line_idx, path, cwd)
     end,
