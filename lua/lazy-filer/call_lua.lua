@@ -12,7 +12,9 @@ return {
         if ui.main.get_win() then
             ui.main.focus()
         else
-            ui.main.open_float()
+            ui.main.open_float(function(win)
+                vim.api.nvim_set_option_value("cursorline", true, { win = win })
+            end)
         end
     end,
 
