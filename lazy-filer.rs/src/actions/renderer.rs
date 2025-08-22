@@ -396,8 +396,24 @@ mod display_line {
     {
         fn hl_group(item: &Item) -> &'static str {
             match item.metadata.file_type {
-                FileType::Regular | FileType::LinkRegular => "regular",
-                FileType::Directory | FileType::LinkDirectory => "directory",
+                FileType::Regular | FileType::LinkRegular => {
+                    if item.metadata.perm & 0o400 == 0 {
+                        "no_read"
+                    } else if item.metadata.perm & 0o100 == 0 {
+                        "regular"
+                    } else {
+                        "exec"
+                    }
+                }
+                FileType::Directory | FileType::LinkDirectory => {
+                    if item.metadata.perm & 0o400 == 0 {
+                        "no_read"
+                    } else if item.metadata.perm & 0o100 == 0 {
+                        "no_exec_dir"
+                    } else {
+                        "directory"
+                    }
+                }
                 FileType::Other | FileType::LinkOther => "other_file",
             }
         }

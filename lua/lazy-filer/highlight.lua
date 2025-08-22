@@ -8,6 +8,9 @@ local default_hl = {
     directory = { link = "Directory" },
     metadata = { link = "Comment" },
     regular = { link = "Normal" },
+    exec = { link = "Special" },
+    no_read = { link = "Error" },
+    no_exec_dir = { link = "Error" },
     other_file = { link = "Comment" },
     link_to = { link = "Comment" },
 }
@@ -16,6 +19,9 @@ local hl_names = {
     directory = "LazyFilerDirectory",
     metadata = "LazyFilerMetadata",
     regular = "LazyFilerRegular",
+    exec = "LazyFilerExec",
+    no_read = "LazyFilerNoRead",
+    no_exec_dir = "LazyFilerNoExecDir",
     other_file = "LazyFilerOther",
     link_to = "LazyFilerLinkTo",
 }
