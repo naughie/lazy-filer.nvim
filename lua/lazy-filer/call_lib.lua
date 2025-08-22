@@ -1,15 +1,14 @@
 local states = require("lazy-filer.states")
+local ns = require("lazy-filer.namespace")
 local ui = states.ui
-
-local ns = { value = "lazy-filer" }
 
 local ns_rpc = require("nvim-router").rpc
 
 local function rpcnotify(name, ...)
-    ns_rpc.notify(ns.value, name, ...)
+    ns_rpc.notify(ns.get(), name, ...)
 end
 local function rpcrequest(name, ...)
-    return ns_rpc.request(ns.value, name, ...)
+    return ns_rpc.request(ns.get(), name, ...)
 end
 
 local function get_or_create_buf()
@@ -71,18 +70,5 @@ return {
     rename_entry = function(dir_line_idx, new_path, cwd)
         local buf = get_or_create_buf()
         rpcnotify("rename_entry", buf, dir_line_idx, cwd, new_path)
-    end,
-
-    get_info = function(plugin_root)
-        return {
-            package = "lazy-filer-rs",
-            path = plugin_root .. "/lazy-filer.rs",
-            handler = "NeovimHandler",
-            ns = ns.value,
-        }
-    end,
-
-    update_ns = function(new_ns)
-        ns.value = new_ns
     end,
 }

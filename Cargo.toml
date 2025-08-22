@@ -1,8 +1,0 @@
-[workspace]
-members = [
-  "lazy-filer.rs",
-]
-resolver = "3"
-
-[profile.release]
-strip = true

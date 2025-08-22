@@ -2,6 +2,7 @@ local M = {}
 
 local states = require("lazy-filer.states")
 local rpc_call = require("lazy-filer.call_lib")
+local ns = require("lazy-filer.namespace")
 local subwin = require("lazy-filer.subwin")
 local hl = require("lazy-filer.highlight")
 
@@ -15,9 +16,9 @@ local plugin_root = ""
 
 function M.lib_info(root_dir)
     if root_dir then
-        return rpc_call.get_info(root_dir)
+        return ns.get_info(root_dir)
     else
-        return rpc_call.get_info(plugin_root)
+        return ns.get_info(plugin_root)
     end
 end
 
@@ -152,7 +153,7 @@ function M.setup(opts)
     end
 
     if opts.rpc_ns then
-        rpc_call.update_ns(opts.rpc_ns)
+        ns.update(opts.rpc_ns)
     end
 
     hl.set_highlight_groups(opts.hl)
