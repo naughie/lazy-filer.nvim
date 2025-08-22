@@ -72,6 +72,10 @@ impl Metadata {
             FileType::LinkRegular | FileType::LinkDirectory | FileType::LinkOther
         )
     }
+
+    fn is_executable(self) -> bool {
+        self.is_regular() && (self.perm & 0o100 != 0)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -374,6 +378,9 @@ mod display_line {
 
         if metadata.is_link() {
             ret.push('@');
+        }
+        if metadata.is_executable() {
+            ret.push('*');
         }
         if metadata.is_dir() {
             ret.push('/');
