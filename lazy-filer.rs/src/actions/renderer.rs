@@ -74,7 +74,7 @@ impl Metadata {
     }
 
     fn is_executable(self) -> bool {
-        self.is_regular() && (self.perm & 0o100 != 0)
+        self.is_regular() && self.perm.exec
     }
 }
 
@@ -347,13 +347,13 @@ mod display_line {
             };
 
             let mut meta_str = [ftype_byte, b'-', b'-', b'-'];
-            if metadata.perm & 0o400 != 0 {
+            if metadata.perm.read {
                 meta_str[1] = b'r';
             }
-            if metadata.perm & 0o200 != 0 {
+            if metadata.perm.write {
                 meta_str[2] = b'w';
             }
-            if metadata.perm & 0o100 != 0 {
+            if metadata.perm.exec {
                 meta_str[3] = b'x';
             }
 
@@ -397,21 +397,21 @@ mod display_line {
         fn hl_group(item: &Item) -> &'static str {
             match item.metadata.file_type {
                 FileType::Regular | FileType::LinkRegular => {
-                    if item.metadata.perm & 0o400 == 0 {
+                    if !item.metadata.perm.read {
                         "no_read"
-                    } else if item.metadata.perm & 0o100 == 0 {
-                        "regular"
-                    } else {
+                    } else if item.metadata.perm.exec {
                         "exec"
+                    } else {
+                        "regular"
                     }
                 }
                 FileType::Directory | FileType::LinkDirectory => {
-                    if item.metadata.perm & 0o400 == 0 {
+                    if !item.metadata.perm.read {
                         "no_read"
-                    } else if item.metadata.perm & 0o100 == 0 {
-                        "no_exec_dir"
-                    } else {
+                    } else if item.metadata.perm.exec {
                         "directory"
+                    } else {
+                        "no_exec_dir"
                     }
                 }
                 FileType::Other | FileType::LinkOther => "other_file",

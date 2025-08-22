@@ -4,8 +4,6 @@ use std::ffi::{OsStr, OsString};
 use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
 
-use std::ops::BitAnd;
-
 use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -30,20 +28,61 @@ impl AsRef<Path> for Component {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-pub struct Permissions(u32);
-
-impl Permissions {
-    fn from_std(perm: std::fs::Permissions) -> Self {
-        use std::os::unix::fs::PermissionsExt;
-        Self(perm.mode())
-    }
+pub struct Permissions {
+    pub read: bool,
+    pub write: bool,
+    pub exec: bool,
 }
 
-impl BitAnd<u32> for Permissions {
-    type Output = u32;
+impl Permissions {
+    fn from_std(meta: std::fs::Metadata) -> Self {
+        use nix::unistd;
+        use std::os::unix::fs::MetadataExt;
 
-    fn bitand(self, rhs: u32) -> Self::Output {
-        self.0 & rhs
+        let mode = meta.mode();
+        let file_uid = meta.uid();
+        let eff_uid = unistd::geteuid().as_raw();
+
+        if file_uid == eff_uid {
+            Self {
+                read: mode & 0o400 != 0,
+                write: mode & 0o200 != 0,
+                exec: mode & 0o100 != 0,
+            }
+        } else {
+            let file_gid = meta.gid();
+            let eff_gid = unistd::getegid().as_raw();
+
+            if file_gid == eff_gid {
+                Self {
+                    read: mode & 0o040 != 0,
+                    write: mode & 0o020 != 0,
+                    exec: mode & 0o010 != 0,
+                }
+            } else if let Ok(groups) = unistd::getgroups()
+                && groups.iter().any(|gid| gid.as_raw() == file_gid)
+            {
+                Self {
+                    read: mode & 0o040 != 0,
+                    write: mode & 0o020 != 0,
+                    exec: mode & 0o010 != 0,
+                }
+            } else {
+                Self {
+                    read: mode & 0o004 != 0,
+                    write: mode & 0o002 != 0,
+                    exec: mode & 0o001 != 0,
+                }
+            }
+        }
+    }
+
+    fn from_raw(perm: u32) -> Self {
+        Self {
+            read: perm & 0o400 != 0,
+            write: perm & 0o200 != 0,
+            exec: perm & 0o100 != 0,
+        }
     }
 }
 
@@ -98,11 +137,11 @@ impl Entries {
 
             let file = if file_type.is_file() {
                 let metadata = entry.metadata()?;
-                let perm = Permissions::from_std(metadata.permissions());
+                let perm = Permissions::from_std(metadata);
                 File::Regular { perm }
             } else if file_type.is_dir() {
                 let metadata = entry.metadata()?;
-                let perm = Permissions::from_std(metadata.permissions());
+                let perm = Permissions::from_std(metadata);
 
                 File::Directory {
                     entries: Default::default(),
@@ -112,11 +151,11 @@ impl Entries {
                 let path = entry.path();
                 let file = if path.is_file() {
                     let metadata = path.metadata()?;
-                    let perm = Permissions::from_std(metadata.permissions());
+                    let perm = Permissions::from_std(metadata);
                     File::Regular { perm }
                 } else if path.is_dir() {
                     let metadata = path.metadata()?;
-                    let perm = Permissions::from_std(metadata.permissions());
+                    let perm = Permissions::from_std(metadata);
                     File::Directory {
                         entries: Default::default(),
                         perm,
@@ -216,14 +255,14 @@ impl File {
 
     pub fn regular(perm: u32) -> Self {
         Self::Regular {
-            perm: Permissions(perm),
+            perm: Permissions::from_raw(perm),
         }
     }
 
     pub fn empty_directory(perm: u32) -> Self {
         Self::Directory {
             entries: Default::default(),
-            perm: Permissions(perm),
+            perm: Permissions::from_raw(perm),
         }
     }
 }
@@ -260,7 +299,7 @@ impl RootFile {
             } else {
                 let perm = stack
                     .metadata()
-                    .map(|meta| Permissions::from_std(meta.permissions()))
+                    .map(Permissions::from_std)
                     .unwrap_or_default();
                 let next = Entries::default();
                 let real_dir = File::Directory {
