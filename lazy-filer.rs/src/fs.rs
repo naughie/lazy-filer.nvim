@@ -4,6 +4,8 @@ use std::ffi::{OsStr, OsString};
 use std::io::Error as IoError;
 use std::path::{Path, PathBuf};
 
+use std::ops::BitAnd;
+
 use std::sync::Arc;
 use tokio::sync::{Mutex, MutexGuard};
 
@@ -35,19 +37,13 @@ impl Permissions {
         use std::os::unix::fs::PermissionsExt;
         Self(perm.mode())
     }
+}
 
-    pub fn to_s(self) -> [u8; 3] {
-        let mut bytes = [b'-', b'-', b'-'];
-        if self.0 & 0o400 != 0 {
-            bytes[0] = b'r';
-        }
-        if self.0 & 0o200 != 0 {
-            bytes[1] = b'w';
-        }
-        if self.0 & 0o100 != 0 {
-            bytes[2] = b'x';
-        }
-        bytes
+impl BitAnd<u32> for Permissions {
+    type Output = u32;
+
+    fn bitand(self, rhs: u32) -> Self::Output {
+        self.0 & rhs
     }
 }
 
@@ -140,8 +136,39 @@ impl Entries {
         let mut lock = self.0.lock().await;
         lock.retain(|k, _| new_keys.contains(k));
 
-        for (key, val) in new_entries {
-            lock.entry(key).or_insert(val);
+        for (key, new_file) in new_entries {
+            if let Some(old_file) = lock.get_mut(&key) {
+                match (old_file, new_file) {
+                    (
+                        File::Directory { perm, entries: _ },
+                        File::Directory {
+                            perm: new_perm,
+                            entries: _,
+                        },
+                    ) => {
+                        *perm = new_perm;
+                    }
+                    (File::Link { to: old_to }, File::Link { to: new_to }) => {
+                        match (old_to.follow_link_mut(), new_to.follow_link_owned()) {
+                            (
+                                File::Directory { perm, entries: _ },
+                                File::Directory {
+                                    perm: new_perm,
+                                    entries: _,
+                                },
+                            ) => {
+                                *perm = new_perm;
+                            }
+                            (old_to, new_to) => *old_to = new_to,
+                        }
+                    }
+                    (old_file, new_file) => {
+                        *old_file = new_file;
+                    }
+                }
+            } else {
+                lock.insert(key, new_file);
+            }
         }
 
         Ok(())
@@ -158,6 +185,16 @@ pub enum File {
 
 impl File {
     pub fn follow_link(&self) -> &Self {
+        let mut ret = self;
+        loop {
+            match ret {
+                File::Link { to } => ret = to,
+                _ => return ret,
+            }
+        }
+    }
+
+    pub fn follow_link_mut(&mut self) -> &mut Self {
         let mut ret = self;
         loop {
             match ret {

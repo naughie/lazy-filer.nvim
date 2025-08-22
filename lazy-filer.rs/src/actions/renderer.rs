@@ -1,5 +1,4 @@
 use super::{NvimErr, NvimWtr};
-use nvim_router::nvim_rs::Value;
 use nvim_router::nvim_rs::{Buffer, Neovim};
 
 use crate::fs::Permissions;
@@ -49,15 +48,6 @@ pub enum FileType {
     LinkOther,
     Other,
 }
-impl FileType {
-    fn to_s(self) -> u8 {
-        match self {
-            Self::Regular | Self::LinkRegular => b'f',
-            Self::Directory | Self::LinkDirectory => b'd',
-            Self::Other | Self::LinkOther => b'-',
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Metadata {
@@ -65,17 +55,6 @@ pub struct Metadata {
     pub file_type: FileType,
 }
 impl Metadata {
-    pub fn push(self, s: &mut String) {
-        s.push('[');
-        let perm = self.perm.to_s();
-        let ftype = self.file_type.to_s();
-        let meta = [ftype, perm[0], perm[1], perm[2]];
-        let meta = unsafe { std::str::from_utf8_unchecked(&meta) };
-        s.push_str(meta);
-        s.push(']');
-        s.push(' ');
-    }
-
     pub fn is_regular(self) -> bool {
         matches!(self.file_type, FileType::Regular | FileType::LinkRegular)
     }
@@ -312,104 +291,6 @@ impl Edit<'_, '_, '_> {
     }
 }
 
-fn make_hl_ranges<'l, L>(start_line: i64, items: L) -> Vec<Value>
-where
-    L: IntoIterator<Item = &'l Item>,
-    L::IntoIter: ExactSizeIterator,
-{
-    fn hl_group(item: &Item) -> &'static str {
-        match item.metadata.file_type {
-            FileType::Regular | FileType::LinkRegular => "regular",
-            FileType::Directory | FileType::LinkDirectory => "directory",
-            FileType::Other | FileType::LinkOther => "other_file",
-        }
-    }
-    fn hl_link_to() -> &'static str {
-        "link_to"
-    }
-
-    let items = items.into_iter();
-    let mut ranges = Vec::with_capacity(2 * items.len());
-
-    for (i, item) in items.enumerate() {
-        let line = start_line + i as i64;
-
-        let offset = item.level.to_num() * 2;
-
-        let meta_range = offset..(offset + 6);
-        let fname_start = offset + 7;
-        let fname_end = {
-            let fname = item.path.file_name().unwrap_or_default();
-            fname_start + fname.to_string_lossy().len()
-        };
-
-        let meta_range = vec![
-            (Value::from("hl"), Value::from("metadata")),
-            (Value::from("line"), Value::from(line)),
-            (Value::from("start_col"), Value::from(meta_range.start)),
-            (Value::from("end_col"), Value::from(meta_range.end)),
-        ];
-        let fname_range = vec![
-            (Value::from("hl"), Value::from(hl_group(item))),
-            (Value::from("line"), Value::from(line)),
-            (Value::from("start_col"), Value::from(fname_start)),
-            (Value::from("end_col"), Value::from(fname_end)),
-        ];
-
-        ranges.push(Value::Map(meta_range));
-        ranges.push(Value::Map(fname_range));
-
-        if item.metadata.is_link()
-            && let Ok(target) = std::fs::read_link(&item.path)
-        {
-            let target = format!("  --> {}", target.display());
-            let opts = vec![
-                (Value::from("hl"), Value::from(hl_link_to())),
-                (Value::from("line"), Value::from(line)),
-                (Value::from("target"), Value::from(target)),
-            ];
-
-            ranges.push(Value::Map(opts));
-        }
-    }
-
-    ranges
-}
-
-async fn highlight(nvim: &Neovim<NvimWtr>, ranges: Vec<Value>) -> Result<(), NvimErr> {
-    nvim.exec_lua(
-        "require('lazy-filer.call_lua').set_highlight(...)",
-        vec![Value::Array(ranges)],
-    )
-    .await?;
-
-    Ok(())
-}
-
-pub fn make_line(item: &Item) -> String {
-    let &Item {
-        level,
-        ref path,
-        metadata,
-    } = item;
-
-    let fname = path.file_name().unwrap_or_default();
-
-    let mut ret = String::with_capacity(fname.len() + 2 * level.to_num() + 7);
-    level.repeat(|| ret.push_str("  "));
-    metadata.push(&mut ret);
-    ret.push_str(&fname.to_string_lossy());
-
-    if metadata.is_link() {
-        ret.push('@');
-    }
-    if metadata.is_dir() {
-        ret.push('/');
-    }
-
-    ret
-}
-
 pub struct PathGetter<'a> {
     inner: &'a Items,
     idx: LineIdx,
@@ -439,5 +320,142 @@ impl ItemIter<'_> {
     {
         let lock = self.inner.lock().await;
         lock.iter().fold(init, f)
+    }
+}
+
+pub use display_line::make_line;
+use display_line::{highlight, make_hl_ranges};
+mod display_line {
+    use super::{NvimErr, NvimWtr};
+    use nvim_router::nvim_rs::Neovim;
+    use nvim_router::nvim_rs::Value;
+
+    use super::{FileType, Item, Metadata};
+
+    pub fn make_line(item: &Item) -> String {
+        fn metadata_str(metadata: Metadata, target: &mut String) {
+            target.push('[');
+
+            let ftype_byte = match metadata.file_type {
+                FileType::Regular | FileType::LinkRegular => b'f',
+                FileType::Directory | FileType::LinkDirectory => b'd',
+                FileType::Other | FileType::LinkOther => b'-',
+            };
+
+            let mut meta_str = [ftype_byte, b'-', b'-', b'-'];
+            if metadata.perm & 0o400 != 0 {
+                meta_str[1] = b'r';
+            }
+            if metadata.perm & 0o200 != 0 {
+                meta_str[2] = b'w';
+            }
+            if metadata.perm & 0o100 != 0 {
+                meta_str[3] = b'x';
+            }
+
+            let meta = unsafe { std::str::from_utf8_unchecked(&meta_str) };
+            target.push_str(meta);
+            target.push(']');
+            target.push(' ');
+        }
+
+        let &Item {
+            level,
+            ref path,
+            metadata,
+        } = item;
+
+        let fname = path.file_name().unwrap_or_default();
+
+        let mut ret = String::with_capacity(fname.len() + 2 * level.to_num() + 7);
+        level.repeat(|| ret.push_str("  "));
+        metadata_str(item.metadata, &mut ret);
+        ret.push_str(&fname.to_string_lossy());
+
+        if metadata.is_link() {
+            ret.push('@');
+        }
+        if metadata.is_dir() {
+            ret.push('/');
+        }
+
+        ret
+    }
+
+    pub(super) fn make_hl_ranges<'l, L>(start_line: i64, items: L) -> Vec<Value>
+    where
+        L: IntoIterator<Item = &'l Item>,
+        L::IntoIter: ExactSizeIterator,
+    {
+        fn hl_group(item: &Item) -> &'static str {
+            match item.metadata.file_type {
+                FileType::Regular | FileType::LinkRegular => "regular",
+                FileType::Directory | FileType::LinkDirectory => "directory",
+                FileType::Other | FileType::LinkOther => "other_file",
+            }
+        }
+        fn hl_link_to() -> &'static str {
+            "link_to"
+        }
+
+        let items = items.into_iter();
+        let mut ranges = Vec::with_capacity(2 * items.len());
+
+        for (i, item) in items.enumerate() {
+            let line = start_line + i as i64;
+
+            let offset = item.level.to_num() * 2;
+
+            let meta_range = offset..(offset + 6);
+            let fname_start = offset + 7;
+            let fname_end = {
+                let fname = item.path.file_name().unwrap_or_default();
+                fname_start + fname.to_string_lossy().len()
+            };
+
+            let meta_range = vec![
+                (Value::from("hl"), Value::from("metadata")),
+                (Value::from("line"), Value::from(line)),
+                (Value::from("start_col"), Value::from(meta_range.start)),
+                (Value::from("end_col"), Value::from(meta_range.end)),
+            ];
+            let fname_range = vec![
+                (Value::from("hl"), Value::from(hl_group(item))),
+                (Value::from("line"), Value::from(line)),
+                (Value::from("start_col"), Value::from(fname_start)),
+                (Value::from("end_col"), Value::from(fname_end)),
+            ];
+
+            ranges.push(Value::Map(meta_range));
+            ranges.push(Value::Map(fname_range));
+
+            if item.metadata.is_link()
+                && let Ok(target) = std::fs::read_link(&item.path)
+            {
+                let target = format!("  --> {}", target.display());
+                let opts = vec![
+                    (Value::from("hl"), Value::from(hl_link_to())),
+                    (Value::from("line"), Value::from(line)),
+                    (Value::from("target"), Value::from(target)),
+                ];
+
+                ranges.push(Value::Map(opts));
+            }
+        }
+
+        ranges
+    }
+
+    pub(super) async fn highlight(
+        nvim: &Neovim<NvimWtr>,
+        ranges: Vec<Value>,
+    ) -> Result<(), NvimErr> {
+        nvim.exec_lua(
+            "require('lazy-filer.call_lua').set_highlight(...)",
+            vec![Value::Array(ranges)],
+        )
+        .await?;
+
+        Ok(())
     }
 }
