@@ -29,13 +29,6 @@ impl Level {
         self.0
     }
 
-    pub fn repeat(self, mut f: impl FnMut()) {
-        let level = self.0;
-        for _ in 0..level {
-            f();
-        }
-    }
-
     pub const MAX: Self = Self(10);
 }
 
@@ -334,7 +327,12 @@ mod display_line {
     use nvim_router::nvim_rs::Neovim;
     use nvim_router::nvim_rs::Value;
 
-    use super::{FileType, Item, Metadata};
+    use super::{FileType, Item, Level, Metadata};
+
+    fn indent_width(level: Level) -> usize {
+        let level = level.to_num();
+        if level == 0 { 0 } else { 4 * (level - 1) + 2 }
+    }
 
     pub fn make_line(item: &Item) -> String {
         fn metadata_str(metadata: Metadata, target: &mut String) {
@@ -363,6 +361,17 @@ mod display_line {
             target.push(' ');
         }
 
+        fn indent_str(level: Level, target: &mut String) {
+            let level = level.to_num();
+            if level == 0 {
+                return;
+            }
+            target.push_str("  ");
+            for _ in 1..level {
+                target.push_str("    ");
+            }
+        }
+
         let &Item {
             level,
             ref path,
@@ -371,8 +380,8 @@ mod display_line {
 
         let fname = path.file_name().unwrap_or_default();
 
-        let mut ret = String::with_capacity(fname.len() + 2 * level.to_num() + 7);
-        level.repeat(|| ret.push_str("  "));
+        let mut ret = String::with_capacity(fname.len() + indent_width(level) + 9);
+        indent_str(level, &mut ret);
         metadata_str(item.metadata, &mut ret);
         ret.push_str(&fname.to_string_lossy());
 
@@ -427,7 +436,7 @@ mod display_line {
         for (i, item) in items.enumerate() {
             let line = start_line + i as i64;
 
-            let offset = item.level.to_num() * 2;
+            let offset = indent_width(item.level);
 
             let meta_range = offset..(offset + 6);
             let fname_start = offset + 7;
