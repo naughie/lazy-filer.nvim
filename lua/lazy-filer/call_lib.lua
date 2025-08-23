@@ -1,15 +1,10 @@
 local states = require("lazy-filer.states")
 local ns = require("lazy-filer.namespace")
+
 local ui = states.ui
 
-local ns_rpc = require("nvim-router").rpc
-
-local function rpcnotify(name, ...)
-    ns_rpc.notify(ns.get(), name, ...)
-end
-local function rpcrequest(name, ...)
-    return ns_rpc.request(ns.get(), name, ...)
-end
+local rpcnotify = ns.rpc.notify
+local rpcrequest = ns.rpc.request
 
 local function get_or_create_buf()
     ui.main.create_buf()

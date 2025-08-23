@@ -1,12 +1,11 @@
 local ns = { value = "lazy-filer" }
 
-return {
-    get = function()
-        return ns.value
-    end,
+local ns_rpc = require("nvim-router").rpc(ns.value)
 
+return {
     update = function(new_ns)
         ns.value = new_ns
+        ns_rpc.update_ns(new_ns)
     end,
 
     get_info = function(plugin_root)
@@ -16,4 +15,6 @@ return {
             ns = ns.value,
         }
     end,
+
+    rpc = ns_rpc,
 }
