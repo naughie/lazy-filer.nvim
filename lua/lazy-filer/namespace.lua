@@ -11,7 +11,6 @@ return {
 
     get_info = function(plugin_root)
         return {
-            package = "lazy-filer-rs",
             path = plugin_root .. "/lazy-filer.rs",
             handler = "NeovimHandler",
             ns = ns.value,
