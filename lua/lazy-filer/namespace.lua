@@ -1,20 +1,29 @@
-local ns = { value = "lazy-filer" }
+local M = {}
 
-local ns_rpc = require("nvim-router").rpc(ns.value)
+local default_ns = "lazy-filer"
 
-return {
-    update = function(new_ns)
-        ns.value = new_ns
-        ns_rpc.update_ns(new_ns)
-    end,
+local router = require("nvim-router")
 
-    get_info = function(plugin_root)
-        return {
-            path = plugin_root .. "/lazy-filer.rs",
-            handler = "NeovimHandler",
-            ns = ns.value,
-        }
-    end,
-
-    rpc = ns_rpc,
+M.rpc = {
+    notify = function() end,
+    request = function() end,
 }
+
+function M.register(plugin_root, new_ns)
+    local info = {
+        path = plugin_root .. "/lazy-filer.rs",
+        handler = "NeovimHandler",
+    }
+
+    if new_ns then
+        info.ns = new_ns
+    else
+        info.ns = default_ns
+    end
+
+    local rpc = router.register(info)
+    M.rpc.notify = rpc.notify
+    M.rpc.request = rpc.request
+end
+
+return M

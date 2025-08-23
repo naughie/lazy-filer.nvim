@@ -14,14 +14,6 @@ local api = vim.api
 
 local plugin_root = ""
 
-function M.lib_info(root_dir)
-    if root_dir then
-        return ns.get_info(root_dir)
-    else
-        return ns.get_info(plugin_root)
-    end
-end
-
 local function get_line_idx()
     local win = ui.main.get_win()
     if not win then return end
@@ -152,11 +144,9 @@ function M.setup(opts)
         ui.update_opts({ background = opts.border })
     end
 
-    if opts.rpc_ns then
-        ns.update(opts.rpc_ns)
-    end
-
     hl.set_highlight_groups(opts.hl)
+
+    ns.register(plugin_root, opts.rpc_ns)
 end
 
 return M
