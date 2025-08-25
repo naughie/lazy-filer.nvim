@@ -13,6 +13,7 @@ local default_hl = {
     no_exec_dir = { link = "Error" },
     other_file = { link = "Comment" },
     link_to = { link = "Comment" },
+    indent = { link = "Comment" },
 }
 
 local hl_names = {
@@ -24,6 +25,7 @@ local hl_names = {
     no_exec_dir = "LazyFilerNoExecDir",
     other_file = "LazyFilerOther",
     link_to = "LazyFilerLinkTo",
+    indent = "LazyFilerIndent",
 }
 
 function M.set_highlight_groups(opts)
@@ -47,10 +49,20 @@ for key, hl in pairs(hl_names) do
         })
     end
 end
+M.set_extmark.metadata = function(buf, opts)
+    api.nvim_buf_set_extmark(buf, ns, opts.line, 0, {
+        virt_text = { { opts.text, hl_names.metadata } },
+        virt_text_pos = "eol",
+        hl_mode = "combine",
+        invalidate = true,
+    })
+end
 M.set_extmark.link_to = function(buf, opts)
     api.nvim_buf_set_extmark(buf, ns, opts.line, 0, {
-        virt_text = { { opts.target, hl_names.link_to } },
+        virt_text = { { opts.text, hl_names.link_to } },
         virt_text_pos = "eol",
+        hl_mode = "combine",
+        invalidate = true,
     })
 end
 

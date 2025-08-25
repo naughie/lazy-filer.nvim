@@ -329,38 +329,148 @@ mod display_line {
 
     use super::{FileType, Item, Level, Metadata};
 
+    use std::ops::Range;
+    use std::path::Path;
+
+    pub struct HlRange {
+        line: i64,
+        col: Range<usize>,
+    }
+    impl HlRange {
+        fn into_value(self, hl: &str) -> Value {
+            Value::Map(vec![
+                (Value::from("hl"), Value::from(hl)),
+                (Value::from("line"), Value::from(self.line)),
+                (Value::from("start_col"), Value::from(self.col.start)),
+                (Value::from("end_col"), Value::from(self.col.end)),
+            ])
+        }
+    }
+
+    pub struct VirText<T> {
+        line: i64,
+        text: T,
+    }
+    fn virt_into_text(line: i64, text: impl Into<Value>, hl: &str) -> Value {
+        Value::Map(vec![
+            (Value::from("hl"), Value::from(hl)),
+            (Value::from("line"), Value::from(line)),
+            (Value::from("text"), text.into()),
+        ])
+    }
+
+    pub enum Highlight {
+        Directory(HlRange),
+        Regular(HlRange),
+        Exec(HlRange),
+        NoRead(HlRange),
+        NoExecDir(HlRange),
+        OtherFile(HlRange),
+        Indent(HlRange),
+        LinkTo(VirText<String>),
+        Metadata(VirText<[u8; 6]>),
+    }
+
+    impl Highlight {
+        fn into_value(self) -> Value {
+            use Highlight::*;
+            match self {
+                Directory(range) => range.into_value("directory"),
+                Regular(range) => range.into_value("regular"),
+                Exec(range) => range.into_value("exec"),
+                NoRead(range) => range.into_value("no_read"),
+                NoExecDir(range) => range.into_value("no_exec_dir"),
+                OtherFile(range) => range.into_value("other_file"),
+                Indent(range) => range.into_value("indent"),
+                LinkTo(virt) => virt_into_text(virt.line, virt.text, "link_to"),
+                Metadata(virt) => virt_into_text(
+                    virt.line,
+                    unsafe { std::str::from_utf8_unchecked(&virt.text) },
+                    "metadata",
+                ),
+            }
+        }
+
+        fn indent(line: i64, col: Range<usize>) -> Self {
+            let range = HlRange { line, col };
+            Self::Indent(range)
+        }
+
+        fn from_item(item: &Item, line: i64, col: Range<usize>) -> Self {
+            use Highlight::*;
+
+            let range = HlRange { line, col };
+            match item.metadata.file_type {
+                FileType::Regular | FileType::LinkRegular => {
+                    if !item.metadata.perm.read {
+                        NoRead(range)
+                    } else if item.metadata.perm.exec {
+                        Exec(range)
+                    } else {
+                        Regular(range)
+                    }
+                }
+                FileType::Directory | FileType::LinkDirectory => {
+                    if !item.metadata.perm.read {
+                        NoRead(range)
+                    } else if item.metadata.perm.exec {
+                        Directory(range)
+                    } else {
+                        NoExecDir(range)
+                    }
+                }
+                FileType::Other | FileType::LinkOther => OtherFile(range),
+            }
+        }
+    }
+
     fn indent_width(level: Level) -> usize {
         let level = level.to_num();
-        if level == 0 { 0 } else { 4 * (level - 1) + 2 }
+        if level == 0 {
+            0
+        } else if level == 1 {
+            2
+        } else {
+            let vert_len = "\u{eb10}".len();
+            (3 + vert_len) * (level - 1) + 2
+        }
+    }
+
+    fn metadata_str(metadata: Metadata) -> [u8; 6] {
+        let ftype_byte = match metadata.file_type {
+            FileType::Regular | FileType::LinkRegular => b'f',
+            FileType::Directory | FileType::LinkDirectory => b'd',
+            FileType::Other | FileType::LinkOther => b'-',
+        };
+
+        let mut meta_str = [b'[', ftype_byte, b'-', b'-', b'-', b']'];
+        if metadata.perm.read {
+            meta_str[2] = b'r';
+        }
+        if metadata.perm.write {
+            meta_str[3] = b'w';
+        }
+        if metadata.perm.exec {
+            meta_str[4] = b'x';
+        }
+
+        meta_str
+    }
+
+    fn make_fname(path: &Path, metadata: Metadata) -> String {
+        let icon = match metadata.file_type {
+            FileType::Regular | FileType::LinkRegular => '\u{f4a5}',
+            FileType::Directory | FileType::LinkDirectory => '\u{f413}',
+            FileType::Other | FileType::LinkOther => '\u{f29c}',
+        };
+
+        let fname = path.file_name().unwrap_or_default();
+        let fname: &Path = fname.as_ref();
+
+        format!("{icon} {}", fname.display())
     }
 
     pub fn make_line(item: &Item) -> String {
-        fn metadata_str(metadata: Metadata, target: &mut String) {
-            target.push('[');
-
-            let ftype_byte = match metadata.file_type {
-                FileType::Regular | FileType::LinkRegular => b'f',
-                FileType::Directory | FileType::LinkDirectory => b'd',
-                FileType::Other | FileType::LinkOther => b'-',
-            };
-
-            let mut meta_str = [ftype_byte, b'-', b'-', b'-'];
-            if metadata.perm.read {
-                meta_str[1] = b'r';
-            }
-            if metadata.perm.write {
-                meta_str[2] = b'w';
-            }
-            if metadata.perm.exec {
-                meta_str[3] = b'x';
-            }
-
-            let meta = unsafe { std::str::from_utf8_unchecked(&meta_str) };
-            target.push_str(meta);
-            target.push(']');
-            target.push(' ');
-        }
-
         fn indent_str(level: Level, target: &mut String) {
             let level = level.to_num();
             if level == 0 {
@@ -368,7 +478,8 @@ mod display_line {
             }
             target.push_str("  ");
             for _ in 1..level {
-                target.push_str("    ");
+                target.push('\u{eb10}');
+                target.push_str("   ");
             }
         }
 
@@ -378,12 +489,11 @@ mod display_line {
             metadata,
         } = item;
 
-        let fname = path.file_name().unwrap_or_default();
+        let fname = make_fname(path, metadata);
 
         let mut ret = String::with_capacity(fname.len() + indent_width(level) + 9);
         indent_str(level, &mut ret);
-        metadata_str(item.metadata, &mut ret);
-        ret.push_str(&fname.to_string_lossy());
+        ret.push_str(&fname);
 
         if metadata.is_link() {
             ret.push('@');
@@ -403,75 +513,37 @@ mod display_line {
         L: IntoIterator<Item = &'l Item>,
         L::IntoIter: ExactSizeIterator,
     {
-        fn hl_group(item: &Item) -> &'static str {
-            match item.metadata.file_type {
-                FileType::Regular | FileType::LinkRegular => {
-                    if !item.metadata.perm.read {
-                        "no_read"
-                    } else if item.metadata.perm.exec {
-                        "exec"
-                    } else {
-                        "regular"
-                    }
-                }
-                FileType::Directory | FileType::LinkDirectory => {
-                    if !item.metadata.perm.read {
-                        "no_read"
-                    } else if item.metadata.perm.exec {
-                        "directory"
-                    } else {
-                        "no_exec_dir"
-                    }
-                }
-                FileType::Other | FileType::LinkOther => "other_file",
-            }
-        }
-        fn hl_link_to() -> &'static str {
-            "link_to"
-        }
-
         let items = items.into_iter();
-        let mut ranges = Vec::with_capacity(2 * items.len());
+        let mut ranges = Vec::with_capacity(items.len());
 
         for (i, item) in items.enumerate() {
             let line = start_line + i as i64;
 
-            let offset = indent_width(item.level);
+            let indent_end = indent_width(item.level);
+            let indt_hl = Highlight::indent(line, 0..indent_end);
+            ranges.push(indt_hl.into_value());
 
-            let meta_range = offset..(offset + 6);
-            let fname_start = offset + 7;
+            let fname_start = indent_end;
             let fname_end = {
-                let fname = item.path.file_name().unwrap_or_default();
-                fname_start + fname.to_string_lossy().len()
+                let fname = make_fname(&item.path, item.metadata);
+                fname_start + fname.len()
             };
 
-            let meta_range = vec![
-                (Value::from("hl"), Value::from("metadata")),
-                (Value::from("line"), Value::from(line)),
-                (Value::from("start_col"), Value::from(meta_range.start)),
-                (Value::from("end_col"), Value::from(meta_range.end)),
-            ];
-            let fname_range = vec![
-                (Value::from("hl"), Value::from(hl_group(item))),
-                (Value::from("line"), Value::from(line)),
-                (Value::from("start_col"), Value::from(fname_start)),
-                (Value::from("end_col"), Value::from(fname_end)),
-            ];
+            let item_hl = Highlight::from_item(item, line, fname_start..fname_end);
+            ranges.push(item_hl.into_value());
 
-            ranges.push(Value::Map(meta_range));
-            ranges.push(Value::Map(fname_range));
+            let meta_hl = Highlight::Metadata(VirText {
+                line,
+                text: metadata_str(item.metadata),
+            });
+            ranges.push(meta_hl.into_value());
 
             if item.metadata.is_link()
                 && let Ok(target) = std::fs::read_link(&item.path)
             {
-                let target = format!("  --> {}", target.display());
-                let opts = vec![
-                    (Value::from("hl"), Value::from(hl_link_to())),
-                    (Value::from("line"), Value::from(line)),
-                    (Value::from("target"), Value::from(target)),
-                ];
-
-                ranges.push(Value::Map(opts));
+                let target = format!(" \u{f061} {}", target.display());
+                let link_hl = Highlight::LinkTo(VirText { line, text: target });
+                ranges.push(link_hl.into_value());
             }
         }
 
