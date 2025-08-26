@@ -66,4 +66,6 @@ M.set_extmark.link_to = function(buf, opts)
     })
 end
 
+api.nvim_set_hl(0, "LazyFilerNoCursor", { reverse = true, blend = 100 })
+
 return M
