@@ -1,5 +1,6 @@
 use super::{NvimErr, NvimWtr};
-use nvim_router::nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::Neovim;
+use nvim_router::nvim_rs::Value;
 
 use crate::fs::Permissions;
 
@@ -90,16 +91,8 @@ impl Items {
         self.0.lock().await
     }
 
-    pub fn edit<'n, 'b>(
-        &self,
-        nvim: &'n Neovim<NvimWtr>,
-        buf: &'b Buffer<NvimWtr>,
-    ) -> Edit<'_, 'n, 'b> {
-        Edit {
-            inner: self,
-            nvim,
-            buf,
-        }
+    pub fn edit<'n>(&self, nvim: &'n Neovim<NvimWtr>) -> Edit<'_, 'n> {
+        Edit { inner: self, nvim }
     }
 
     pub fn get(&self, idx: LineIdx) -> PathGetter<'_> {
@@ -140,13 +133,27 @@ impl Add<i64> for LineIdx {
     }
 }
 
-pub struct Edit<'a, 'n, 'b> {
+pub struct Edit<'a, 'n> {
     inner: &'a Items,
     nvim: &'n Neovim<NvimWtr>,
-    buf: &'b Buffer<NvimWtr>,
 }
 
-impl Edit<'_, '_, '_> {
+async fn set_buf_lines(
+    nvim: &Neovim<NvimWtr>,
+    start: i64,
+    end: i64,
+    lines: Vec<Value>,
+) -> Result<(), NvimErr> {
+    nvim.exec_lua(
+        "require('lazy-filer.call_lua').set_filer_lines(...)",
+        vec![Value::from(start), Value::from(end), Value::Array(lines)],
+    )
+    .await?;
+
+    Ok(())
+}
+
+impl Edit<'_, '_> {
     pub async fn replace_all(self, lines: impl Stream<Item = Item>) -> Result<(), NvimErr> {
         let lines = lines.collect::<Vec<_>>().await;
 
@@ -158,7 +165,7 @@ impl Edit<'_, '_, '_> {
         *lock = lines;
         drop(lock);
 
-        self.buf.set_lines(0, -1, false, rendered).await?;
+        set_buf_lines(self.nvim, 0, -1, rendered).await?;
         highlight(self.nvim, hl_ranges).await?;
 
         Ok(())
@@ -194,9 +201,7 @@ impl Edit<'_, '_, '_> {
         lock.splice(start..end, lines);
         drop(lock);
 
-        self.buf
-            .set_lines(start as i64, end as i64, false, rendered)
-            .await?;
+        set_buf_lines(self.nvim, start as i64, end as i64, rendered).await?;
         highlight(self.nvim, hl_ranges).await?;
 
         Ok(())
@@ -218,7 +223,7 @@ impl Edit<'_, '_, '_> {
         drop(lock);
 
         let LineIdx(at) = at;
-        self.buf.set_lines(at, at, false, rendered).await?;
+        set_buf_lines(self.nvim, at, at, rendered).await?;
         highlight(self.nvim, hl_ranges).await?;
 
         Ok(())
@@ -235,9 +240,7 @@ impl Edit<'_, '_, '_> {
 
         let hl_ranges = make_hl_ranges(at as i64, [&item]);
 
-        self.buf
-            .set_lines(at as i64, at as i64, false, vec![make_line(&item)])
-            .await?;
+        set_buf_lines(self.nvim, at as i64, at as i64, vec![make_line(&item)]).await?;
 
         highlight(self.nvim, hl_ranges).await?;
         lock.insert(at, item);
@@ -254,7 +257,7 @@ impl Edit<'_, '_, '_> {
         drop(lock);
 
         let LineIdx(at) = at;
-        self.buf.set_lines(at, at + 1, false, vec![]).await?;
+        set_buf_lines(self.nvim, at, at + 1, vec![]).await?;
 
         Ok(())
     }
@@ -284,9 +287,7 @@ impl Edit<'_, '_, '_> {
         lock.drain(start..end);
         drop(lock);
 
-        self.buf
-            .set_lines(start as i64, end as i64, false, vec![])
-            .await?;
+        set_buf_lines(self.nvim, start as i64, end as i64, vec![]).await?;
 
         Ok(())
     }
@@ -324,8 +325,7 @@ impl ItemIter<'_> {
     }
 }
 
-pub use display_line::make_line;
-use display_line::{highlight, make_hl_ranges};
+use display_line::{highlight, make_hl_ranges, make_line};
 mod display_line {
     use super::{NvimErr, NvimWtr};
     use nvim_router::nvim_rs::Neovim;
@@ -483,7 +483,7 @@ mod display_line {
         format!("{icon} {}", fname.display())
     }
 
-    pub fn make_line(item: &Item) -> String {
+    pub fn make_line(item: &Item) -> Value {
         fn indent_str(level: Level, target: &mut String) {
             let level = level.to_num();
             if level == 0 {
@@ -518,7 +518,7 @@ mod display_line {
             ret.push('/');
         }
 
-        ret
+        ret.into()
     }
 
     pub(super) fn make_hl_ranges<'l, L>(start_line: i64, items: L) -> Vec<Value>

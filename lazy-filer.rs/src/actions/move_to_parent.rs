@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_router::nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::Neovim;
 
 use super::{Action, DirArg, States};
 
@@ -7,7 +7,6 @@ use super::utils;
 
 pub struct MoveToParent {
     pub nvim: Neovim<NvimWtr>,
-    pub buf: Buffer<NvimWtr>,
     pub dir: DirArg,
 }
 
@@ -30,12 +29,7 @@ impl Action for MoveToParent {
         target_dir.update_with_readdir().await?;
 
         target_dir
-            .render_entire_buffer(
-                &self.nvim,
-                &self.buf,
-                &states.actions.rendered_lines,
-                &expanded_dir,
-            )
+            .render_entire_buffer(&self.nvim, &states.actions.rendered_lines, &expanded_dir)
             .await?;
 
         Ok(())

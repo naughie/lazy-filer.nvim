@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_router::nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::Neovim;
 
 use super::renderer::{FileType, Item, Items, Level, Metadata};
 use crate::fs::{self, File, Permissions, RootFile};
@@ -167,7 +167,6 @@ impl<'a> Entries<'a> {
     pub async fn render_entire_buffer(
         &self,
         nvim: &Neovim<NvimWtr>,
-        buf: &Buffer<NvimWtr>,
         lines: &Items,
         expanded_dir: &BTreeSet<PathBuf>,
     ) -> Result<(), NvimErr> {
@@ -189,7 +188,7 @@ impl<'a> Entries<'a> {
             }
         });
 
-        lines.edit(nvim, buf).replace_all(cwd.chain(stream)).await?;
+        lines.edit(nvim).replace_all(cwd.chain(stream)).await?;
 
         Ok(())
     }

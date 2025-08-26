@@ -1,12 +1,11 @@
 use super::{NvimErr, NvimWtr};
-use nvim_router::nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::Neovim;
 
 use super::{Action, DirArg, States};
 
 use super::utils;
 
 pub struct NewFiler {
-    pub buf: Buffer<NvimWtr>,
     pub dir: DirArg,
     pub nvim: Neovim<NvimWtr>,
 }
@@ -24,12 +23,7 @@ impl Action for NewFiler {
         target_dir.update_with_readdir().await?;
 
         target_dir
-            .render_entire_buffer(
-                &self.nvim,
-                &self.buf,
-                &states.actions.rendered_lines,
-                &expanded_dir,
-            )
+            .render_entire_buffer(&self.nvim, &states.actions.rendered_lines, &expanded_dir)
             .await?;
         open_filer_win(&self.nvim).await?;
 
@@ -38,12 +32,7 @@ impl Action for NewFiler {
             .await?;
 
         target_dir
-            .render_entire_buffer(
-                &self.nvim,
-                &self.buf,
-                &states.actions.rendered_lines,
-                &expanded_dir,
-            )
+            .render_entire_buffer(&self.nvim, &states.actions.rendered_lines, &expanded_dir)
             .await?;
 
         Ok(())

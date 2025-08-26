@@ -67,6 +67,11 @@ return {
         end
     end,
 
+    set_filer_lines = function(start_line, end_line, lines)
+        ui.main.create_buf()
+        ui.main.set_lines(start_line, end_line, false, lines)
+    end,
+
     set_highlight = function(ranges)
         local buf = ui.main.get_buf()
         if not buf then return end

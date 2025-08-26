@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_router::nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::Neovim;
 
 use super::renderer::{Items, Level, LineIdx};
 use super::utils;
@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 pub struct CreateEntry {
     pub line_idx: LineIdx,
     pub nvim: Neovim<NvimWtr>,
-    pub buf: Buffer<NvimWtr>,
     pub fname: String,
 }
 
@@ -68,7 +67,6 @@ impl Action for CreateEntry {
 
         insert(
             &self.nvim,
-            &self.buf,
             &states.actions.rendered_lines,
             &entry.file,
             entry.level,
@@ -98,14 +96,13 @@ struct Entry {
 
 async fn insert(
     nvim: &Neovim<NvimWtr>,
-    buf: &Buffer<NvimWtr>,
     lines: &Items,
     path: &Path,
     level: Level,
     file: &File,
 ) -> Result<(), NvimErr> {
     lines
-        .edit(nvim, buf)
+        .edit(nvim)
         .insert_dyn(utils::file_to_item(level, path, file), |lines| {
             lines
                 .iter()

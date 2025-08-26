@@ -1,5 +1,5 @@
 use super::{NvimErr, NvimWtr};
-use nvim_router::nvim_rs::{Buffer, Neovim};
+use nvim_router::nvim_rs::Neovim;
 
 use super::renderer::LineIdx;
 use super::utils;
@@ -10,7 +10,6 @@ use std::path::PathBuf;
 pub struct DeleteEntry {
     pub line_idx: LineIdx,
     pub nvim: Neovim<NvimWtr>,
-    pub buf: Buffer<NvimWtr>,
 }
 
 impl Action for DeleteEntry {
@@ -51,7 +50,7 @@ impl Action for DeleteEntry {
                 states
                     .actions
                     .rendered_lines
-                    .edit(&self.nvim, &self.buf)
+                    .edit(&self.nvim)
                     .remove_range(|lines| utils::find_in_dir(&path, lines))
                     .await?;
             }
@@ -64,7 +63,7 @@ impl Action for DeleteEntry {
                 states
                     .actions
                     .rendered_lines
-                    .edit(&self.nvim, &self.buf)
+                    .edit(&self.nvim)
                     .remove(self.line_idx)
                     .await?;
             }

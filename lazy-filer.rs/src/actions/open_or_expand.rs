@@ -1,6 +1,6 @@
 use super::{NvimErr, NvimWtr};
+use nvim_router::nvim_rs::Neovim;
 use nvim_router::nvim_rs::Value;
-use nvim_router::nvim_rs::{Buffer, Neovim};
 
 use super::renderer::{Level, LineIdx};
 use super::{Action, States};
@@ -11,7 +11,6 @@ use std::path::PathBuf;
 pub struct OpenOrExpand {
     pub line_idx: LineIdx,
     pub nvim: Neovim<NvimWtr>,
-    pub buf: Buffer<NvimWtr>,
 }
 
 #[derive(Debug)]
@@ -45,7 +44,7 @@ impl Action for OpenOrExpand {
         match path {
             Path::Regular(path) => open_file(&self.nvim, path).await?,
             Path::Directory(level, path) => {
-                expand_dir(self.line_idx, &self.nvim, &self.buf, level, &path, states).await?
+                expand_dir(self.line_idx, &self.nvim, level, &path, states).await?
             }
         }
 
