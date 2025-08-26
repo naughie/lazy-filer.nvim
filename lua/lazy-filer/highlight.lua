@@ -66,6 +66,13 @@ M.set_extmark.link_to = function(buf, opts)
     })
 end
 
+M.set_extmark.empty_line = function(buf, opts)
+    api.nvim_buf_set_extmark(buf, ns, opts.line, 0, {
+        virt_lines = { { { "", "Comment" } } },
+        invalidate = true,
+    })
+end
+
 api.nvim_set_hl(0, "LazyFilerNoCursor", { reverse = true, blend = 100 })
 
 return M

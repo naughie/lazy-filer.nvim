@@ -29,6 +29,10 @@ impl Level {
         self.0
     }
 
+    fn is_base(self) -> bool {
+        self.0 == 0
+    }
+
     pub const MAX: Self = Self(10);
 }
 
@@ -359,6 +363,13 @@ mod display_line {
         ])
     }
 
+    fn virt_empty_line(line: i64) -> Value {
+        Value::Map(vec![
+            (Value::from("hl"), Value::from("empty_line")),
+            (Value::from("line"), Value::from(line)),
+        ])
+    }
+
     pub enum Highlight {
         Directory(HlRange),
         Regular(HlRange),
@@ -369,6 +380,7 @@ mod display_line {
         Indent(HlRange),
         LinkTo(VirText<String>),
         Metadata(VirText<[u8; 6]>),
+        EmptyLineAfter { line: i64 },
     }
 
     impl Highlight {
@@ -388,6 +400,7 @@ mod display_line {
                     unsafe { std::str::from_utf8_unchecked(&virt.text) },
                     "metadata",
                 ),
+                EmptyLineAfter { line } => virt_empty_line(line),
             }
         }
 
@@ -518,6 +531,11 @@ mod display_line {
 
         for (i, item) in items.enumerate() {
             let line = start_line + i as i64;
+
+            if item.level.is_base() {
+                let empty_hl = Highlight::EmptyLineAfter { line };
+                ranges.push(empty_hl.into_value());
+            }
 
             let indent_end = indent_width(item.level);
             let indt_hl = Highlight::indent(line, 0..indent_end);
