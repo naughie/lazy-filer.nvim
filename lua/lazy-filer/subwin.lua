@@ -29,6 +29,12 @@ end
 
 M.create_entry = {
     open_win = function()
+        local line_idx = get_line_idx()
+
+        local dir = rpc_call.get_dir(line_idx)
+        if not dir.name then return end
+        states.tmp_create_entry_states.dir = dir
+
         if not ui.companion.get_buf() then
             ui.companion.create_buf(function(buf)
                 if companion_keymaps.new_entry then
@@ -36,11 +42,6 @@ M.create_entry = {
                 end
             end)
         end
-
-        local line_idx = get_line_idx()
-
-        local dir = rpc_call.get_dir(line_idx)
-        states.tmp_create_entry_states.dir = dir
 
         ui.companion.set_lines(0, -1, false, {
             "Create a new entry in " .. dir.name,
@@ -84,8 +85,10 @@ M.create_entry = {
 M.delete_entry = {
     open_win = function()
         local line_idx = get_line_idx()
+        if line_idx == 1 then return end
 
         local file = rpc_call.get_file_path(line_idx)
+        if not file.name then return end
 
         if not ui.companion.get_buf() then
             local close = function()
@@ -143,6 +146,13 @@ M.delete_entry = {
 
 M.rename_entry = {
     open_win = function()
+        local line_idx = get_line_idx()
+        if line_idx == 1 then return end
+
+        local file = rpc_call.get_file_path(line_idx)
+        if not file.name then return end
+        states.tmp_rename_entry_states.file = file
+
         if not ui.companion.get_buf() then
             ui.companion.create_buf(function(buf)
                 if companion_keymaps.rename_entry then
@@ -150,11 +160,6 @@ M.rename_entry = {
                 end
             end)
         end
-
-        local line_idx = get_line_idx()
-
-        local file = rpc_call.get_file_path(line_idx)
-        states.tmp_rename_entry_states.file = file
 
         ui.companion.set_lines(0, -1, false, {
             "Rename an entry: " .. file.name,

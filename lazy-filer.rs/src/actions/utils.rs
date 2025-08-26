@@ -171,12 +171,25 @@ impl<'a> Entries<'a> {
         lines: &Items,
         expanded_dir: &BTreeSet<PathBuf>,
     ) -> Result<(), NvimErr> {
+        use futures::stream::{StreamExt as _, once};
+
         let stream = self
             .flatten(Level::base())
             .filter(|path| expanded_dir.contains(path))
             .await;
 
-        lines.edit(nvim, buf).replace_all(stream).await?;
+        let cwd = once(async {
+            Item {
+                level: Level::base(),
+                path: self.dir.to_path_buf(),
+                metadata: Metadata {
+                    perm: Permissions::read_from_path(self.dir),
+                    file_type: FileType::Directory,
+                },
+            }
+        });
+
+        lines.edit(nvim, buf).replace_all(cwd.chain(stream)).await?;
 
         Ok(())
     }

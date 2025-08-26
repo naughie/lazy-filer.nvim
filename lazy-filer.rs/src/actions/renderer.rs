@@ -429,10 +429,10 @@ mod display_line {
         if level == 0 {
             0
         } else if level == 1 {
-            2
+            4
         } else {
             let vert_len = "\u{eb10}".len();
-            (3 + vert_len) * (level - 1) + 2
+            (3 + vert_len) * (level - 1) + 4
         }
     }
 
@@ -476,7 +476,7 @@ mod display_line {
             if level == 0 {
                 return;
             }
-            target.push_str("  ");
+            target.push_str("    ");
             for _ in 1..level {
                 target.push('\u{eb10}');
                 target.push_str("   ");
@@ -491,7 +491,7 @@ mod display_line {
 
         let fname = make_fname(path, metadata);
 
-        let mut ret = String::with_capacity(fname.len() + indent_width(level) + 9);
+        let mut ret = String::with_capacity(fname.len() + indent_width(level) + 2);
         indent_str(level, &mut ret);
         ret.push_str(&fname);
 

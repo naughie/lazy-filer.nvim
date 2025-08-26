@@ -35,6 +35,10 @@ pub struct Permissions {
 }
 
 impl Permissions {
+    pub fn read_from_path(path: &Path) -> Self {
+        path.metadata().map(Self::from_std).unwrap_or_default()
+    }
+
     fn from_std(meta: std::fs::Metadata) -> Self {
         use nix::unistd;
         use std::os::unix::fs::MetadataExt;
