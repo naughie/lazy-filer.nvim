@@ -69,7 +69,12 @@ return {
 
     set_filer_lines = function(start_line, end_line, lines)
         ui.main.create_buf()
+        local buf = ui.main.get_buf()
+        if not buf then return end
+
+        api.nvim_set_option_value("modifiable", true, { buf = buf })
         ui.main.set_lines(start_line, end_line, false, lines)
+        api.nvim_set_option_value("modifiable", false, { buf = buf })
     end,
 
     set_highlight = function(ranges)
