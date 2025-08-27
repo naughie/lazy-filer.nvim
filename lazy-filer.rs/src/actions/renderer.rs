@@ -30,10 +30,6 @@ impl Level {
         self.0
     }
 
-    fn is_base(self) -> bool {
-        self.0 == 0
-    }
-
     pub const MAX: Self = Self(10);
 }
 
@@ -69,10 +65,6 @@ impl Metadata {
             self.file_type,
             FileType::LinkRegular | FileType::LinkDirectory | FileType::LinkOther
         )
-    }
-
-    fn is_executable(self) -> bool {
-        self.is_regular() && self.perm.exec
     }
 }
 
@@ -138,15 +130,56 @@ pub struct Edit<'a, 'n> {
     nvim: &'n Neovim<NvimWtr>,
 }
 
-async fn set_buf_lines(
+struct BufLines(Vec<Value>);
+fn items_to_lua<'l, L>(items: L) -> BufLines
+where
+    L: IntoIterator<Item = &'l Item>,
+{
+    fn item_to_lua(item: &Item) -> Value {
+        use std::path::Path;
+
+        let fname = item.path.file_name().unwrap_or_default();
+        let fname: &Path = fname.as_ref();
+        let fname = fname.display().to_string();
+
+        let level = item.level.to_num();
+
+        let mut inner = vec![
+            (Value::from("fname"), Value::from(fname)),
+            (Value::from("level"), Value::from(level)),
+            (Value::from("is_link"), Value::from(item.metadata.is_link())),
+            (
+                Value::from("is_regular"),
+                Value::from(item.metadata.is_regular()),
+            ),
+            (Value::from("is_dir"), Value::from(item.metadata.is_dir())),
+            (Value::from("read"), Value::from(item.metadata.perm.read)),
+            (Value::from("write"), Value::from(item.metadata.perm.write)),
+            (Value::from("exec"), Value::from(item.metadata.perm.exec)),
+        ];
+
+        if item.metadata.is_link()
+            && let Ok(target) = std::fs::read_link(&item.path)
+        {
+            let target = target.display().to_string();
+            inner.push((Value::from("link_to"), Value::from(target)));
+        }
+
+        Value::Map(inner)
+    }
+
+    BufLines(items.into_iter().map(item_to_lua).collect())
+}
+
+async fn update_buf(
     nvim: &Neovim<NvimWtr>,
     start: i64,
     end: i64,
-    lines: Vec<Value>,
+    BufLines(items): BufLines,
 ) -> Result<(), NvimErr> {
     nvim.exec_lua(
-        "require('lazy-filer.call_lua').set_filer_lines(...)",
-        vec![Value::from(start), Value::from(end), Value::Array(lines)],
+        "require('lazy-filer.call_lua').update_filer_buf(...)",
+        vec![Value::from(start), Value::from(end), Value::Array(items)],
     )
     .await?;
 
@@ -156,17 +189,13 @@ async fn set_buf_lines(
 impl Edit<'_, '_> {
     pub async fn replace_all(self, lines: impl Stream<Item = Item>) -> Result<(), NvimErr> {
         let lines = lines.collect::<Vec<_>>().await;
-
-        let rendered = lines.iter().map(make_line).collect();
-
-        let hl_ranges = make_hl_ranges(0, &lines);
+        let items = items_to_lua(&lines);
 
         let mut lock = self.inner.lock().await;
         *lock = lines;
         drop(lock);
 
-        set_buf_lines(self.nvim, 0, -1, rendered).await?;
-        highlight(self.nvim, hl_ranges).await?;
+        update_buf(self.nvim, 0, -1, items).await?;
 
         Ok(())
     }
@@ -180,7 +209,7 @@ impl Edit<'_, '_> {
         use std::ops::Bound;
 
         let lines = lines.collect::<Vec<_>>().await;
-        let rendered = lines.iter().map(make_line).collect();
+        let items = items_to_lua(&lines);
 
         let mut lock = self.inner.lock().await;
         let range = range(&lock);
@@ -196,25 +225,17 @@ impl Edit<'_, '_> {
             Bound::Unbounded => lock.len(),
         };
 
-        let hl_ranges = make_hl_ranges(start as i64, &lines);
-
         lock.splice(start..end, lines);
         drop(lock);
 
-        set_buf_lines(self.nvim, start as i64, end as i64, rendered).await?;
-        highlight(self.nvim, hl_ranges).await?;
+        update_buf(self.nvim, start as i64, end as i64, items).await?;
 
         Ok(())
     }
 
     pub async fn insert(self, lines: impl Stream<Item = Item>, at: LineIdx) -> Result<(), NvimErr> {
         let lines = lines.collect::<Vec<_>>().await;
-        let rendered = lines.iter().map(make_line).collect();
-
-        let hl_ranges = {
-            let LineIdx(at) = at;
-            make_hl_ranges(at, &lines)
-        };
+        let items = items_to_lua(&lines);
 
         let mut lock = self.inner.lock().await;
         if let Some(at) = at.as_usize(lock.len()) {
@@ -223,8 +244,7 @@ impl Edit<'_, '_> {
         drop(lock);
 
         let LineIdx(at) = at;
-        set_buf_lines(self.nvim, at, at, rendered).await?;
-        highlight(self.nvim, hl_ranges).await?;
+        update_buf(self.nvim, at, at, items).await?;
 
         Ok(())
     }
@@ -238,12 +258,10 @@ impl Edit<'_, '_> {
 
         let at = at(&lock);
 
-        let hl_ranges = make_hl_ranges(at as i64, [&item]);
+        let items = items_to_lua([&item]);
 
-        set_buf_lines(self.nvim, at as i64, at as i64, vec![make_line(&item)]).await?;
-
-        highlight(self.nvim, hl_ranges).await?;
         lock.insert(at, item);
+        update_buf(self.nvim, at as i64, at as i64, items).await?;
 
         Ok(())
     }
@@ -257,7 +275,7 @@ impl Edit<'_, '_> {
         drop(lock);
 
         let LineIdx(at) = at;
-        set_buf_lines(self.nvim, at, at + 1, vec![]).await?;
+        update_buf(self.nvim, at, at + 1, items_to_lua([])).await?;
 
         Ok(())
     }
@@ -287,7 +305,7 @@ impl Edit<'_, '_> {
         lock.drain(start..end);
         drop(lock);
 
-        set_buf_lines(self.nvim, start as i64, end as i64, vec![]).await?;
+        update_buf(self.nvim, start as i64, end as i64, items_to_lua([])).await?;
 
         Ok(())
     }
@@ -322,262 +340,5 @@ impl ItemIter<'_> {
     {
         let lock = self.inner.lock().await;
         lock.iter().fold(init, f)
-    }
-}
-
-use display_line::{highlight, make_hl_ranges, make_line};
-mod display_line {
-    use super::{NvimErr, NvimWtr};
-    use nvim_router::nvim_rs::Neovim;
-    use nvim_router::nvim_rs::Value;
-
-    use super::{FileType, Item, Level, Metadata};
-
-    use std::ops::Range;
-    use std::path::Path;
-
-    pub struct HlRange {
-        line: i64,
-        col: Range<usize>,
-    }
-    impl HlRange {
-        fn into_value(self, hl: &str) -> Value {
-            Value::Map(vec![
-                (Value::from("hl"), Value::from(hl)),
-                (Value::from("line"), Value::from(self.line)),
-                (Value::from("start_col"), Value::from(self.col.start)),
-                (Value::from("end_col"), Value::from(self.col.end)),
-            ])
-        }
-    }
-
-    pub struct VirText<T> {
-        line: i64,
-        text: T,
-    }
-    fn virt_into_text(line: i64, text: impl Into<Value>, hl: &str) -> Value {
-        Value::Map(vec![
-            (Value::from("hl"), Value::from(hl)),
-            (Value::from("line"), Value::from(line)),
-            (Value::from("text"), text.into()),
-        ])
-    }
-
-    fn virt_empty_line(line: i64) -> Value {
-        Value::Map(vec![
-            (Value::from("hl"), Value::from("empty_line")),
-            (Value::from("line"), Value::from(line)),
-        ])
-    }
-
-    pub enum Highlight {
-        Directory(HlRange),
-        Regular(HlRange),
-        Exec(HlRange),
-        NoRead(HlRange),
-        NoExecDir(HlRange),
-        OtherFile(HlRange),
-        Indent(HlRange),
-        LinkTo(VirText<String>),
-        Metadata(VirText<[u8; 6]>),
-        EmptyLineAfter { line: i64 },
-    }
-
-    impl Highlight {
-        fn into_value(self) -> Value {
-            use Highlight::*;
-            match self {
-                Directory(range) => range.into_value("directory"),
-                Regular(range) => range.into_value("regular"),
-                Exec(range) => range.into_value("exec"),
-                NoRead(range) => range.into_value("no_read"),
-                NoExecDir(range) => range.into_value("no_exec_dir"),
-                OtherFile(range) => range.into_value("other_file"),
-                Indent(range) => range.into_value("indent"),
-                LinkTo(virt) => virt_into_text(virt.line, virt.text, "link_to"),
-                Metadata(virt) => virt_into_text(
-                    virt.line,
-                    unsafe { std::str::from_utf8_unchecked(&virt.text) },
-                    "metadata",
-                ),
-                EmptyLineAfter { line } => virt_empty_line(line),
-            }
-        }
-
-        fn indent(line: i64, col: Range<usize>) -> Self {
-            let range = HlRange { line, col };
-            Self::Indent(range)
-        }
-
-        fn from_item(item: &Item, line: i64, col: Range<usize>) -> Self {
-            use Highlight::*;
-
-            let range = HlRange { line, col };
-            match item.metadata.file_type {
-                FileType::Regular | FileType::LinkRegular => {
-                    if !item.metadata.perm.read {
-                        NoRead(range)
-                    } else if item.metadata.perm.exec {
-                        Exec(range)
-                    } else {
-                        Regular(range)
-                    }
-                }
-                FileType::Directory | FileType::LinkDirectory => {
-                    if !item.metadata.perm.read {
-                        NoRead(range)
-                    } else if item.metadata.perm.exec {
-                        Directory(range)
-                    } else {
-                        NoExecDir(range)
-                    }
-                }
-                FileType::Other | FileType::LinkOther => OtherFile(range),
-            }
-        }
-    }
-
-    fn indent_width(level: Level) -> usize {
-        let level = level.to_num();
-        if level == 0 {
-            0
-        } else if level == 1 {
-            4
-        } else {
-            let vert_len = "\u{eb10}".len();
-            (3 + vert_len) * (level - 1) + 4
-        }
-    }
-
-    fn metadata_str(metadata: Metadata) -> [u8; 6] {
-        let ftype_byte = match metadata.file_type {
-            FileType::Regular | FileType::LinkRegular => b'f',
-            FileType::Directory | FileType::LinkDirectory => b'd',
-            FileType::Other | FileType::LinkOther => b'-',
-        };
-
-        let mut meta_str = [b'[', ftype_byte, b'-', b'-', b'-', b']'];
-        if metadata.perm.read {
-            meta_str[2] = b'r';
-        }
-        if metadata.perm.write {
-            meta_str[3] = b'w';
-        }
-        if metadata.perm.exec {
-            meta_str[4] = b'x';
-        }
-
-        meta_str
-    }
-
-    fn make_fname(path: &Path, metadata: Metadata) -> String {
-        let icon = match metadata.file_type {
-            FileType::Regular | FileType::LinkRegular => '\u{f4a5}',
-            FileType::Directory | FileType::LinkDirectory => '\u{f413}',
-            FileType::Other | FileType::LinkOther => '\u{f29c}',
-        };
-
-        let fname = path.file_name().unwrap_or_default();
-        let fname: &Path = fname.as_ref();
-
-        format!("{icon} {}", fname.display())
-    }
-
-    pub fn make_line(item: &Item) -> Value {
-        fn indent_str(level: Level, target: &mut String) {
-            let level = level.to_num();
-            if level == 0 {
-                return;
-            }
-            target.push_str("    ");
-            for _ in 1..level {
-                target.push('\u{eb10}');
-                target.push_str("   ");
-            }
-        }
-
-        let &Item {
-            level,
-            ref path,
-            metadata,
-        } = item;
-
-        let fname = make_fname(path, metadata);
-
-        let mut ret = String::with_capacity(fname.len() + indent_width(level) + 2);
-        indent_str(level, &mut ret);
-        ret.push_str(&fname);
-
-        if metadata.is_link() {
-            ret.push('@');
-        }
-        if metadata.is_executable() {
-            ret.push('*');
-        }
-        if metadata.is_dir() {
-            ret.push('/');
-        }
-
-        ret.into()
-    }
-
-    pub(super) fn make_hl_ranges<'l, L>(start_line: i64, items: L) -> Vec<Value>
-    where
-        L: IntoIterator<Item = &'l Item>,
-        L::IntoIter: ExactSizeIterator,
-    {
-        let items = items.into_iter();
-        let mut ranges = Vec::with_capacity(items.len());
-
-        for (i, item) in items.enumerate() {
-            let line = start_line + i as i64;
-
-            if item.level.is_base() {
-                let empty_hl = Highlight::EmptyLineAfter { line };
-                ranges.push(empty_hl.into_value());
-            }
-
-            let indent_end = indent_width(item.level);
-            let indt_hl = Highlight::indent(line, 0..indent_end);
-            ranges.push(indt_hl.into_value());
-
-            let fname_start = indent_end;
-            let fname_end = {
-                let fname = make_fname(&item.path, item.metadata);
-                fname_start + fname.len()
-            };
-
-            let item_hl = Highlight::from_item(item, line, fname_start..fname_end);
-            ranges.push(item_hl.into_value());
-
-            let meta_hl = Highlight::Metadata(VirText {
-                line,
-                text: metadata_str(item.metadata),
-            });
-            ranges.push(meta_hl.into_value());
-
-            if item.metadata.is_link()
-                && let Ok(target) = std::fs::read_link(&item.path)
-            {
-                let target = format!(" \u{f44c} {}", target.display());
-                let link_hl = Highlight::LinkTo(VirText { line, text: target });
-                ranges.push(link_hl.into_value());
-            }
-        }
-
-        ranges
-    }
-
-    pub(super) async fn highlight(
-        nvim: &Neovim<NvimWtr>,
-        ranges: Vec<Value>,
-    ) -> Result<(), NvimErr> {
-        nvim.exec_lua(
-            "require('lazy-filer.call_lua').set_highlight(...)",
-            vec![Value::Array(ranges)],
-        )
-        .await?;
-
-        Ok(())
     }
 }
