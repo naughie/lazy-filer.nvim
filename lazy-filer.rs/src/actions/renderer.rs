@@ -559,7 +559,7 @@ mod display_line {
             if item.metadata.is_link()
                 && let Ok(target) = std::fs::read_link(&item.path)
             {
-                let target = format!(" \u{f061} {}", target.display());
+                let target = format!(" \u{f44c} {}", target.display());
                 let link_hl = Highlight::LinkTo(VirText { line, text: target });
                 ranges.push(link_hl.into_value());
             }
