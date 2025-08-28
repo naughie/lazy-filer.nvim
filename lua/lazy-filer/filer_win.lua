@@ -5,59 +5,12 @@ local hl = require("lazy-filer.highlight")
 
 local api = vim.api
 
-local tmp_guicursor = nil
-local nocursor = "n:LazyFilerNoCursor"
-
-local guicursor_info = vim.api.nvim_get_option_info("guicursor")
-local default_guicursor = guicursor_info and guicursor_info.default
-
-local function unset_guicursor()
-    local current_guicursor = vim.o.guicursor
-    if current_guicursor ~= nocursor then tmp_guicursor = current_guicursor end
-
-    vim.o.guicursor = nocursor
-end
-
-local function restore_guicursor()
-    if not tmp_guicursor or tmp_guicursor == "" then
-        vim.o.guicursor = default_guicursor
-    else
-        vim.o.guicursor = tmp_guicursor
-    end
-    tmp_guicursor = nil
-end
-
 function M.open_win()
     if ui.main.get_win() then
         ui.main.focus()
     else
-        ui.main.open_float(function(win, buf)
+        ui.main.open_float(function(win)
             api.nvim_set_option_value("cursorline", true, { win = win })
-
-            unset_guicursor()
-
-            local augroup = api.nvim_create_augroup("NaughieLazyFileUnsetrCursor", { clear = true })
-            local tab = api.nvim_get_current_tabpage()
-
-            api.nvim_create_autocmd("WinEnter", {
-                group = augroup,
-                buffer = buf,
-                callback = function()
-                    vim.schedule(function()
-                        -- nvim_open_win may trigger WinEnter when opening another window
-                        local current_buf = api.nvim_get_current_buf()
-                        if current_buf ~= buf then return end
-
-                        unset_guicursor()
-                    end)
-                end,
-            })
-
-            api.nvim_create_autocmd("WinLeave", {
-                group = augroup,
-                buffer = buf,
-                callback = restore_guicursor,
-            })
         end)
     end
 end

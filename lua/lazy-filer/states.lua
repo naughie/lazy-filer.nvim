@@ -7,7 +7,7 @@ local states = {
 
     dir_displayed = mkstate.tab(),
 
-    ui = myui.declare_ui({}),
+    ui = myui.declare_ui({ main = { hide_cursor = true } }),
 }
 
 return states
