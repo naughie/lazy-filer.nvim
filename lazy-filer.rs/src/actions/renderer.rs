@@ -260,7 +260,12 @@ impl Edit<'_, '_> {
 
         let items = items_to_lua([&item]);
 
-        lock.insert(at, item);
+        if at >= lock.len() {
+            lock.push(item);
+        } else {
+            lock.insert(at, item);
+        }
+        drop(lock);
         update_buf(self.nvim, at as i64, at as i64, items).await?;
 
         Ok(())

@@ -108,7 +108,7 @@ async fn insert(
                 .iter()
                 .enumerate()
                 .find_map(|(i, item)| if item.path < path { None } else { Some(i) })
-                .unwrap_or_default()
+                .unwrap_or(lines.len())
         })
         .await?;
 
