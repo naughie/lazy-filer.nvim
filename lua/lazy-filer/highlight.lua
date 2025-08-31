@@ -41,29 +41,22 @@ end
 M.set_extmark = {}
 
 for key, hl in pairs(hl_names) do
-    M.set_extmark[key] = function(buf, range)
-        api.nvim_buf_set_extmark(buf, ns, range.line, range.start_col, {
-            end_row = range.line,
-            end_col = range.end_col,
-            hl_group = hl,
-        })
+    M.set_extmark[key] = function(buf, opts)
+        if opts.virt_text then
+            api.nvim_buf_set_extmark(buf, ns, opts.line, opts.col or 0, {
+                virt_text = { { opts.virt_text, hl } },
+                virt_text_pos = opts.pos,
+                hl_mode = "combine",
+                invalidate = true,
+            })
+        else
+            api.nvim_buf_set_extmark(buf, ns, opts.line, opts.start_col, {
+                end_row = opts.line,
+                end_col = opts.end_col,
+                hl_group = hl,
+            })
+        end
     end
-end
-M.set_extmark.metadata = function(buf, opts)
-    api.nvim_buf_set_extmark(buf, ns, opts.line, 0, {
-        virt_text = { { opts.text, hl_names.metadata } },
-        virt_text_pos = "eol",
-        hl_mode = "combine",
-        invalidate = true,
-    })
-end
-M.set_extmark.link_to = function(buf, opts)
-    api.nvim_buf_set_extmark(buf, ns, opts.line, 0, {
-        virt_text = { { opts.text, hl_names.link_to } },
-        virt_text_pos = "eol",
-        hl_mode = "combine",
-        invalidate = true,
-    })
 end
 
 M.set_extmark.empty_line = function(buf, opts)

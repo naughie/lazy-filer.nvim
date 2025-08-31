@@ -1,6 +1,9 @@
 local M = {}
 
-local ui = require("lazy-filer.states").ui
+local states = require("lazy-filer.states")
+local ui = states.ui
+local dir_displayed = states.dir_displayed
+
 local hl = require("lazy-filer.highlight")
 
 local api = vim.api
@@ -42,6 +45,12 @@ local metadata_text = function(item)
     return string.format("[%s%s%s%s]", ft, r, w, x)
 end
 
+local function file_icon(item)
+    if item.is_regular then return "\u{f4a5} " end
+    if item.is_dir then return "\u{f413} " end
+    return "\u{f29c} "
+end
+
 local function build_buf_lines(items)
     local lines = {}
     local highlights = {}
@@ -52,13 +61,7 @@ local function build_buf_lines(items)
             indent = "    " .. string.rep("\u{eb10}   ", item.level - 1)
         end
 
-        local file_icon = "\u{f29c}"
-        if item.is_regular then
-            file_icon = "\u{f4a5}"
-        elseif item.is_dir then
-            file_icon = "\u{f413}"
-        end
-        local fname = file_icon .. " " .. item.fname
+        local fname = file_icon(item) .. item.fname
 
         local line = indent .. fname
 
@@ -116,13 +119,15 @@ local function build_buf_lines(items)
 
         local metadata = metadata_text(item)
         insert_hl("metadata", {
-            text = metadata,
+            virt_text = metadata,
+            pos = "eol",
         })
 
         if item.is_link and item.link_to and item.link_to ~= vim.NIL then
             local link_text = " \u{f44c} " .. item.link_to
             insert_hl("link_to", {
-                text = link_text,
+                virt_text = link_text,
+                pos = "eol",
             })
         end
     end
@@ -145,6 +150,21 @@ function M.update_buf(start_line, end_line, items)
         opts.line = opts.line + start_line - 1
         local fn = hl.set_extmark[opts.hl]
         if fn then fn(buf, opts) end
+    end
+
+    if start_line == 0 and #items > 0 and items[1].level == 0 then
+        local icon = file_icon(items[1])
+        local offset = string.len(icon)
+
+        local cwd = dir_displayed.get() or vim.uv.cwd()
+        local parent = vim.fs.dirname(cwd)
+
+        hl.set_extmark.directory(buf, {
+            line = 0,
+            virt_text = parent .. "/",
+            pos = "inline",
+            col = offset,
+        })
     end
 end
 
