@@ -10,7 +10,8 @@ Lazy-filer is a filer plugin built on the top of Rust ecosystem. It is lazy and 
 
 # Install
 
-After `nvim-router` detects that all of dependencies, which are specified in `opts.ns` of `nvim-router` itself, then it automatically runs `cargo build --release` and spawns a plugin-client process.
+After `nvim-router.nvim` detects that all of dependencies, which are specified in `opts.ns` of `nvim-router` itself, are `setup`'d, then it automatically runs `cargo build --release` and spawns a plugin-client process.
+The first build may take a long time.
 
 Once spawning you can open a lazy-filer window and manipulate with the filesystem.
 
@@ -25,7 +26,7 @@ Once spawning you can open a lazy-filer window and manipulate with the filesyste
     { "naughie/my-ui.nvim", lazy = true },
 
     {
-        "naughie/nvim-router",
+        "naughie/nvim-router.nvim",
         lazy = false,
         opts = function(plugin)
             return {
