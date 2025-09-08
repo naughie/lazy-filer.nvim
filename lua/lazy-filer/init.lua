@@ -33,6 +33,16 @@ M.fn = {
         return rpc_call.get_dir(line_idx)
     end,
 
+    chdir_to_cursor = function()
+        local line_idx = get_line_idx()
+        local dir = rpc_call.get_dir(line_idx)
+        if not dir.name then return end
+        api.nvim_set_current_dir(dir.name)
+
+        states.dir_displayed.set(dir.name)
+        rpc_call.refresh(dir.name)
+    end,
+
     move_to_parent = function()
         local cwd = states.dir_displayed.get()
         if not cwd then return end
