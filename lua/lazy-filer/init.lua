@@ -12,8 +12,6 @@ local myui = require("my-ui")
 
 local api = vim.api
 
-local plugin_root = ""
-
 local function get_line_idx()
     local win = ui.main.get_win()
     if not win then return end
@@ -114,8 +112,6 @@ local function define_keymaps_wrap(args, default_opts)
 end
 
 function M.setup(opts)
-    plugin_root = opts.root_dir
-
     if opts.keymaps then
         if opts.keymaps.global then
             for _, args in ipairs(opts.keymaps.global) do
@@ -156,7 +152,7 @@ function M.setup(opts)
 
     hl.set_highlight_groups(opts.hl)
 
-    ns.register(plugin_root, opts.rpc_ns)
+    ns.register(opts.plugin_root, opts.rpc_ns)
 end
 
 return M
