@@ -152,7 +152,7 @@ function M.setup(opts)
 
     hl.set_highlight_groups(opts.hl)
 
-    ns.register(opts.plugin_root, opts.rpc_ns)
+    ns.register(opts.plugin_dir, opts.rpc_ns)
 end
 
 return M

@@ -41,7 +41,7 @@ Once spawning you can open a lazy-filer window and manipulate with the filesyste
         lazy = false,
         opts = function(plugin)
             return {
-                root_dir = plugin.dir,
+                plugin_dir = plugin.dir,
                 border = {
                     -- Highlight group for the border of floating windows.
                     -- Defaults to FloatBorder
