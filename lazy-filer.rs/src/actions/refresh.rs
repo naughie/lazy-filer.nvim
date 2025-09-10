@@ -20,6 +20,7 @@ impl Action for Refresh {
         let expanded_dir = states.actions.expanded_dir.clone().await;
 
         let target_dir = utils::get_entries(&states.root_file, dir).await;
+        target_dir.update_with_readdir().await?;
 
         target_dir
             .update_with_readdir_recursive(&expanded_dir)
