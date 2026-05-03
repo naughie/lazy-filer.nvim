@@ -135,12 +135,27 @@ local function build_buf_lines(items)
     return lines, highlights
 end
 
+local function identical_buf(new_lines, old_lines)
+    if not new_lines or not old_lines then return false end
+    if new_lines == old_lines then return true end
+    if #new_lines ~= #old_lines then return false end
+
+    for i = 1, #new_lines do
+        if new_lines[i] ~= old_lines[i] then return false end
+    end
+
+    return true
+end
+
 function M.update_buf(start_line, end_line, items)
     ui.main.create_buf()
     local buf = ui.main.get_buf()
     if not buf then return end
 
     local lines, highlights = build_buf_lines(items)
+
+    local old_lines = ui.main.lines(start_line, end_line, false)
+    if identical_buf(lines, old_lines) then return end
 
     api.nvim_set_option_value("modifiable", true, { buf = buf })
     ui.main.set_lines(start_line, end_line, false, lines)
