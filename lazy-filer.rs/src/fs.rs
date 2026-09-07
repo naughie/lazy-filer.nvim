@@ -63,15 +63,20 @@ impl Permissions {
                     write: mode & 0o020 != 0,
                     exec: mode & 0o010 != 0,
                 }
-            } else if let Ok(groups) = unistd::getgroups()
-                && groups.iter().any(|gid| gid.as_raw() == file_gid)
-            {
-                Self {
-                    read: mode & 0o040 != 0,
-                    write: mode & 0o020 != 0,
-                    exec: mode & 0o010 != 0,
-                }
             } else {
+                #[cfg(not(target_os = "macos"))]
+                {
+                    if let Ok(groups) = unistd::getgroups()
+                        && groups.iter().any(|gid| gid.as_raw() == file_gid)
+                    {
+                        return Self {
+                            read: mode & 0o040 != 0,
+                            write: mode & 0o020 != 0,
+                            exec: mode & 0o010 != 0,
+                        };
+                    }
+                }
+
                 Self {
                     read: mode & 0o004 != 0,
                     write: mode & 0o002 != 0,
